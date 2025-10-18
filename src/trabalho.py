@@ -86,7 +86,7 @@ def estadoNumero(token):
     
 def estadoOperador(token):
     match token:
-        case "+" | "-" | "*" | "/" | "%" | "^":
+        case "+" | "-" | "*" | "|" | "/" | "%" | "^":
             return True
         case _:
             return False
@@ -126,25 +126,29 @@ def RESorMEM(token):
 # -------------------------
 # Analisador léxico: valida CADA token isoladamente
 def analisadorLexico(tokens):
-    f = open("funcoes_analisador.txt", "a")
+    tokens_convertidos = []
+
     for token in tokens:
         if estadoParenteses(token):
-            f.write(token+"\n")
+            tokens_convertidos.append(token)
             continue
         if estadoOperador(token):
-            f.write(token)
+            tokens_convertidos.append(token)
             continue
         if estadoNumero(token):
-            f.write(token)
+            tokens_convertidos.append("real")  # converte número para token 'real'
             continue
         if RESorMEM(token):
-            f.write(token)  # aceita tanto CMD (RES/MEM) quanto ID (nomes de memória)
+            if token == "RES":
+                tokens_convertidos.append("res")  # converte comando RES para token 'res'
+            else:
+                tokens_convertidos.append("ident")  # converte outros identificadores para token 'ident'
             continue
 
         # Se não passou em nada, é inválido
         raise ValueError(f"Erro léxico: token inválido -> {token}")
 
-    return True
+    return tokens_convertidos
 
 def construirGramatica(): # nenhuma entrada | saída: dados da gramática, FIRST, FOLLOW, tabelaLL1
 
@@ -316,19 +320,23 @@ if __name__ == "__main__":
         resultados = []
         G, FIRST, FOLLOW, tabelaLL1 = construirGramatica()
         lerArquivo(caminho, linhas)
-        for linha in linhas:
-            tokens = []
-            try:
-                # do trabalho 1
-                parseExpressao(linha, tokens)
-                analisadorLexico(tokens)
-                # do trabalho 2
-                derivation = parsear(tokens, tabelaLL1)
-                # pro trabalho 3: analisar semanticamente a derivação
+        with open(caminho, "r", encoding="utf-8") as f:
+            for numero_linha, linha in enumerate(f, start=1):
+                linha = linha.strip()
+                if not linha:
+                    continue
+                tokens = []
+                try:
+                    # do trabalho 1
+                    parseExpressao(linha, tokens)
+                    tokens = analisadorLexico(tokens)
+                    # do trabalho 2
+                    derivation = parsear(tokens, tabelaLL1)
+                    # pro trabalho 3: analisar semanticamente a derivação
 
-                # pra depurar
-                print(f"Linha válida: {linha}")
-                print(f"Tokens: {tokens}")
-                print(f"Derivações: {derivation}")
-            except ValueError as e:
-                print(e)
+                    # pra depurar
+                    print(f"Linha válida: {linha}")
+                    #print(f"Tokens: {tokens}")
+                    #print(f"Derivações: {derivation}")
+                except ValueError as e:
+                    print(e)
