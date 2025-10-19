@@ -20,7 +20,7 @@
 import sys # import para gerenciar argumentos de linha de comando
 import math
 
-EPS = 'ε' # símbolo para epsilon / vazio
+EPS = 'E' # símbolo para epsilon / vazio
 
 def lerArquivo(nomeArquivo, linhas):
     try:
@@ -63,6 +63,19 @@ def parseExpressao(linha, _tokens_):
                 _tokens_.append(token)
                 token = ""
             _tokens_.append(char)
+        elif char in "<>":
+            if token:
+                _tokens_.append(token)
+                token = ""
+            # Verifica se é um operador composto (<=, >=)
+            if i + 1 < len(linha) and linha[i + 1] == '=':
+                _tokens_.append(char + '=')
+                i += 1
+            elif char == '<' and i + 1 < len(linha) and linha[i + 1] == '>':
+                _tokens_.append('<>')
+                i += 1
+            else:
+                _tokens_.append(char)
         else:  # acumula números ou comandos (ex: MEM, RES)
             token += char
         i += 1
@@ -97,6 +110,13 @@ def estadoParenteses(token):
             return True
         case _:
             return False
+        
+def estadoComparador(token):
+    match token:
+        case "<" | ">" | "<=" | ">=" | "=":
+            return True
+        case _:
+            return False
 
 # AFD: identificadores/COMANDOS (RES/MEM)
 def RESorMEM(token):
@@ -119,7 +139,7 @@ def RESorMEM(token):
                 else:
                     return False
 
-    if token in {"RES", "MEM"}:
+    if token in {"RES", "MEM", "IF", "WHILE"}:
         return True
     return True
 
@@ -138,9 +158,16 @@ def analisadorLexico(tokens):
         if estadoNumero(token):
             tokens_convertidos.append("real")  # converte número para token 'real'
             continue
+        if estadoComparador(token):
+            tokens_convertidos.append(token)
+            continue
         if RESorMEM(token):
             if token == "RES":
                 tokens_convertidos.append("res")  # converte comando RES para token 'res'
+            elif token == "IF":
+                tokens_convertidos.append("if") # converte comando IF para token 'if'
+            elif token == "WHILE":
+                tokens_convertidos.append("while") # converte comando WHILE para token 'while'
             else:
                 tokens_convertidos.append("ident")  # converte outros identificadores para token 'ident'
             continue
@@ -282,15 +309,15 @@ def construirGramatica(): # nenhuma entrada | saída: dados da gramática, FIRST
         return table, conflicts
 
     G = {} # construção da gramática usando dicionário
-    G['LINHA'] = [['EXPR']] # não-terminal é chave, terminal é valor
-    G['EXPR'] = [['(', 'RPN_SEQ', ')']]
-    G['RPN_SEQ'] = [['TOKEN', 'RPN_TAIL']]
-    G['RPN_TAIL'] = [['TOKEN', 'RPN_TAIL'], [EPS]]
-    # TOKEN agora não inclui COMANDO separado; comandos são sequences de tokens:
-    G['TOKEN'] = [['NUMERO'], ['IDENT'], ['OPERADOR'], ['EXPR'], ['res']]
-    G['NUMERO'] = [['real']]
-    G['IDENT'] = [['ident']]
-    G['OPERADOR'] = [['+'], ['-'], ['*'], ['/'], ['%'], ['^'], ['|']]
+    G['LINHA'] = [['EXPR']]
+    G['EXPR']  = [['(', 'ITEMS', ')']]
+    G['ITEMS'] = [['ITEM', 'ITEMS'], [EPS]]
+    G['ITEM'] = [['NUMERO'], ['IDENT'], ['OPERADOR'], ['IFKW'], ['WHILEKW'], ['EXPR']]
+    G['NUMERO'] = [['real']]    # token lexical 'real'
+    G['IDENT']  = [['ident']]   # token lexical 'ident' (men/MEM/RES etc.)
+    G['OPERADOR'] = [['+'], ['-'], ['*'], ['/'], ['%'], ['^'], ['|'], ['>'], ['res']] 
+    G['IFKW'] = [['if']]        # será token 'if'
+    G['WHILEKW'] = [['while']]  # será token 'while'
 
     FIRST = calcularFirst(G)
     FOLLOW = calcularFollow(G, FIRST, start='LINHA')
