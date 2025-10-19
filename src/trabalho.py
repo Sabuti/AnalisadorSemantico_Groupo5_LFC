@@ -169,6 +169,33 @@ def analisadorSemantico(derivacao):
                     if token == '/' and b == 0:
                         raise ValueError("Erro semântico: Divisão por zero.")
                     # Simular a operação (não é necessário calcular o valor real)
+                    elif token == '+':
+                        stack.append(a + b)
+                    elif token == '-':
+                        stack.append(a - b)
+                    elif token == '*':
+                        stack.append(a * b)
+                    elif token == '/':
+                        if b == 0:
+                            raise ValueError("Erro semântico: Divisão por zero.")
+                        stack.append(a / b)
+                    elif token == '%':
+                        stack.append(a % b)
+                    elif token == '^':
+                        if a == 0 and b < 0:
+                            raise ValueError("Erro semântico: Exponenciação inválida, base zero com expoente negativo.")
+                        if b.is_integer():
+                            raise ValueError("Erro semântico: Exponenciação inválida, expoente não inteiro.")
+                        stack.append(a ** b)
+                    elif token == '|':
+                        if a < 0 or b < 0:
+                            raise ValueError("Erro semântico: Raiz inválida, índice ou radicando negativo.")
+                        if a == 0:
+                            raise ValueError("Erro semântico: Raiz inválida, índice zero.")
+                        stack.append(b ** (1 / a))
+                    else:
+                        raise ValueError(f"Erro semântico: Operador desconhecido -> {token}")
+
                     stack.append(0)  # Placeholder para o resultado
                 else:
                     stack.append(token)  # Empilha operandos
@@ -197,14 +224,14 @@ def analisadorSemantico(derivacao):
             if numero != 'real':
                 if numero.count(".") > 1:
                     raise ValueError(f"Erro semântico: Número inválido -> {numero}")
-                try:
-                    float(numero)
-                except ValueError:
-                    raise ValueError(f"Erro semântico: Número inválido -> {numero}")
         if nao_terminal == 'IDENT':
             identificador = producao[0]
             if not RESorMEM(identificador):
                 raise ValueError(f"Erro semântico: Identificador inválido -> {identificador}")
+            # fazer aqui para Garantir que as memórias são inicializadas antes de serem usadas;
+            # verificar uso de MEM sem inicialização
+            # verificar uso de RES sem inicialização
+            #Validar o uso correto dos comandos especiais (N RES), (V MEM), e (MEM);
 
     pass
 
