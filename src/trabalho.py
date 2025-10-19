@@ -150,90 +150,36 @@ def analisadorLexico(tokens):
 
     return tokens_convertidos
 
-def analisadorSemantico(derivacao):
-    # Implementar análise semântica conforme a gramática e regras definidas
-    #verificar se a operação é válida (ex: divisão por zero)
+def analisadorSemantico(derivacao, memoria):
+    """
+    Analisa semanticamente a árvore sintática
+    Retorna: (árvore_abstrata, memoria_atualizada, erros_semanticos)
+    """
+    erros = []
+    arvore_abstrata = []
+    pilha_tipos = []  # Para verificar tipos na avaliação RPN
+    
     for nao_terminal, producao in derivacao:
         if nao_terminal == 'RPN_SEQ':
-            tokens = producao
-            operadores = {'+', '-', '*', '/', '%', '^', '|'}
-            stack = []
-            for token in tokens:
-                if token == 'TOKEN':
-                    continue
-                elif token in operadores:
-                    if len(stack) < 2:
-                        raise ValueError("Erro semântico: Operação inválida, operandos insuficientes.")
-                    b = stack.pop()
-                    a = stack.pop()
-                    if token == '/' and b == 0:
-                        raise ValueError("Erro semântico: Divisão por zero.")
-                    # Simular a operação (não é necessário calcular o valor real)
-                    elif token == '+':
-                        stack.append(a + b)
-                    elif token == '-':
-                        stack.append(a - b)
-                    elif token == '*':
-                        stack.append(a * b)
-                    elif token == '/':
-                        if b == 0:
-                            raise ValueError("Erro semântico: Divisão por zero.")
-                        stack.append(a / b)
-                    elif token == '%':
-                        stack.append(a % b)
-                    elif token == '^':
-                        if a == 0 and b < 0:
-                            raise ValueError("Erro semântico: Exponenciação inválida, base zero com expoente negativo.")
-                        if b.is_integer():
-                            raise ValueError("Erro semântico: Exponenciação inválida, expoente não inteiro.")
-                        stack.append(a ** b)
-                    elif token == '|':
-                        if a < 0 or b < 0:
-                            raise ValueError("Erro semântico: Raiz inválida, índice ou radicando negativo.")
-                        if a == 0:
-                            raise ValueError("Erro semântico: Raiz inválida, índice zero.")
-                        stack.append(b ** (1 / a))
-                    else:
-                        raise ValueError(f"Erro semântico: Operador desconhecido -> {token}")
-
-                    stack.append(0)  # Placeholder para o resultado
-                else:
-                    stack.append(token)  # Empilha operandos
-            if len(stack) != 1:
-                raise ValueError("Erro semântico: Expressão inválida, excesso de operandos.")
-        if nao_terminal == 'TOKEN':
-            token = producao[0]
-            if token == 'real':
-                pass  # Números são sempre válidos
-            elif token == 'ident':
-                pass  # Identificadores são sempre válidos
-            elif token == 'res':
-                pass  # Comando 'res' é sempre válido
-            elif token == 'EXPR':
-                nao_terminal_expr = producao[0]
-                if nao_terminal_expr != 'EXPR':
-                    raise ValueError("Erro semântico: Expressão inválida.")
-            else:
-                raise ValueError(f"Erro semântico: Token desconhecido -> {token}")
-        if nao_terminal == 'OPERADOR':
-            operador = producao[0]
-            if operador not in {'+', '-', '*', '/', '%', '^', '|'}:
-                raise ValueError(f"Erro semântico: Operador inválido -> {operador}")
-        if nao_terminal == 'NUMERO':
-            numero = producao[0]
-            if numero != 'real':
-                if numero.count(".") > 1:
-                    raise ValueError(f"Erro semântico: Número inválido -> {numero}")
-        if nao_terminal == 'IDENT':
+            # Validar expressão RPN corretamente
+            if not validarRPN(producao, memoria, erros):
+                return None, memoria, erros
+                
+        elif nao_terminal == 'IDENT':
             identificador = producao[0]
-            if not RESorMEM(identificador):
-                raise ValueError(f"Erro semântico: Identificador inválido -> {identificador}")
-            # fazer aqui para Garantir que as memórias são inicializadas antes de serem usadas;
-            # verificar uso de MEM sem inicialização
-            # verificar uso de RES sem inicialização
-            #Validar o uso correto dos comandos especiais (N RES), (V MEM), e (MEM);
+            if identificador.startswith("MEM"):
+                # Verificar se MEM foi inicializado
+                if identificador not in memoria:
+                    erros.append(f"Erro semântico: Memória '{identificador}' não inicializada")
+            elif identificador == "RES":
+                if "RES" not in memoria:
+                    erros.append(f"Erro semântico: RES não inicializado")
+                    
+    return arvore_abstrata, memoria, erros
 
-    pass
+def validarRPN(tokens, memoria, erros):
+    #melhorar o RPN
+    pass 
 
 def construirGramatica(): # nenhuma entrada | saída: dados da gramática, FIRST, FOLLOW, tabelaLL1
 
@@ -418,7 +364,7 @@ if __name__ == "__main__":
                     # do trabalho 2
                     derivation = parsear(tokens, tabelaLL1)
                     # pro trabalho 3: analisar semanticamente a derivação
-                    analisadorSemantico(derivation)
+                    #analisadorSemantico(derivation)
 
                     # pra depurar
                     print(f"Linha válida: {linha}")
