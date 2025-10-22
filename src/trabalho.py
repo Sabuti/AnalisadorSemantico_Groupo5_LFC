@@ -247,6 +247,51 @@ def analisadorSemantico(derivacao, memoria, historico_resultados):
     return memoria, erros_semanticos, arvore_abstrata
 
 
+def validarRPN(tokens, memoria, erros):
+    erros = []
+    pilha = []
+    
+    # Extrai tokens da derivação para validar RPN
+    tokens = []
+    for _, producao in derivacao:
+        if producao and producao[0] not in ['(', ')']:  # Ignora parênteses
+            tokens.extend(producao)
+    
+    # Simula avaliação RPN
+    for token in tokens:
+        if token in ['real', 'ident']:
+            pilha.append('operando')
+        elif token in ['+', '-', '*', '/', '%', '^', '|', '<', '>', '<=', '>=', '==', '!=', 'res']:
+            if len(pilha) < 2:
+                erros.append(f"Erro RPN: Operador '{token}' sem operandos suficientes")
+                return False, erros
+            pilha.pop()  # Remove operando 2
+            pilha.pop()  # Remove operando 1
+            pilha.append('resultado')  # Adiciona resultado
+    
+    # No final deve sobrar exatamente um resultado
+    if len(pilha) != 1:
+        erros.append("Erro RPN: Expressão mal formada")
+        return False, erros
+    
+    return True, erros
+
+
+def inicializarMemoria():
+    """Inicializa a memória vazia"""
+    return {}
+
+
+def adicionarMemoria(memoria, nome, tipo='desconhecido', inicializada=False):
+    """Adiciona um item à memória"""
+    memoria[nome] = {
+        'tipo': tipo,
+        'inicializada': inicializada,
+        'usada': False
+    }
+    return memoria
+
+
 
 # --------------------------
 # Analisador sintático: constrói a gramática, tabela LL(1)
