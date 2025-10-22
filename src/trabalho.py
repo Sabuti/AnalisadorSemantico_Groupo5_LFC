@@ -291,6 +291,65 @@ def adicionarMemoria(memoria, nome, tipo='desconhecido', inicializada=False):
     }
     return memoria
 
+def gerarDocumentacaoSemantica(memoria, todos_erros, nome_arquivo):
+    """Gera documentação da análise semântica"""
+    nome_base = nome_arquivo.split('.')[0]
+    with open(f"semantico_{nome_base}.txt", "w", encoding="utf-8") as doc:
+        doc.write("=== ANÁLISE SEMÂNTICA ===\n\n")
+        doc.write("MEMÓRIA (Tabela de Símbolos):\n")
+        doc.write("-" * 50 + "\n")
+        if memoria:
+            for simbolo, info in memoria.items():
+                doc.write(f"{simbolo}: {info}\n")
+        else:
+            doc.write("Memória vazia\n")
+        doc.write("\nERROS SEMÂNTICOS ENCONTRADOS:\n")
+        doc.write("-" * 50 + "\n")
+        if todos_erros:
+            for i, erro in enumerate(todos_erros, 1):
+                doc.write(f"{i:2d}. {erro}\n")
+        else:
+            doc.write("Nenhum erro semântico encontrado.\n")
+        doc.write(f"\nRESUMO:\n")
+        doc.write(f"- Total de itens na memória: {len(memoria)}\n")
+        doc.write(f"- Total de erros: {len(todos_erros)}\n")
+
+
+# --------------------------
+
+# Analisador sintático: constrói a gramática, tabela LL(1)
+def processarResultadoExpressao(derivacao, memoria, historico_resultados):
+    """ 
+    Processa uma expressão regular e calcula seu resultado 
+    Retorna o resultado (simulado) e atualiza o histórico 
+    """
+    # Simula o cálculo do resultado (implementação simplificada)
+    resultado_simulado = 0.0
+    # Lógica simplificada para calcular resultado
+    for _, producao in derivacao:
+        if producao and 'real' in producao:
+            resultado_simulado += 1.0  # soma simulada
+
+    
+    # Adiciona ao histórico
+    historico_resultados.append(resultado_simulado)
+    # Atualiza RES com o último resultado
+    memoria = adicionarMemoria(memoria, 'RES', 'numero', True)
+    memoria['RES']['valor'] = resultado_simulado
+    return memoria, historico_resultados, resultado_simulado
+
+
+def identificarTipoLinha(derivacao):
+    """ Identifica se a linha é uma expressão, atribuição ou consulta """
+    for nao_terminal, producao in derivacao:
+        if nao_terminal == 'ATRIBUICAO_MEM':
+            return 'atribuicao_mem'
+        elif nao_terminal == 'CONSULTA_RES':
+            return 'consulta_res'
+        elif nao_terminal == 'EXPR':
+            return 'expressao'
+    
+    return 'desconhecido'
 
 
 # --------------------------
