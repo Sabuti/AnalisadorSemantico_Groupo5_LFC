@@ -177,6 +177,37 @@ def analisadorLexico(tokens):
 
     return tokens_convertidos
 
+def analisadorSemantico(derivacao, memoria):
+    """
+    Analisa semanticamente a árvore sintática
+    Retorna: (árvore_abstrata, memoria_atualizada, erros_semanticos)
+    """
+    erros = []
+    arvore_abstrata = []
+    pilha_tipos = []  # Para verificar tipos na avaliação RPN
+    
+    for nao_terminal, producao in derivacao:
+        if nao_terminal == 'RPN_SEQ':
+            # Validar expressão RPN corretamente
+            if not validarRPN(producao, memoria, erros):
+                return None, memoria, erros
+                
+        elif nao_terminal == 'IDENT':
+            identificador = producao[0]
+            if identificador.startswith("MEM"):
+                # Verificar se MEM foi inicializado
+                if identificador not in memoria:
+                    erros.append(f"Erro semântico: Memória '{identificador}' não inicializada")
+            elif identificador == "RES":
+                if "RES" not in memoria:
+                    erros.append(f"Erro semântico: RES não inicializado")
+                    
+    return arvore_abstrata, memoria, erros
+
+def validarRPN(tokens, memoria, erros):
+    #melhorar o RPN
+    pass 
+
 # --------------------------
 # Analisador sintático: constrói a gramática, tabela LL(1)
 def construirGramatica():
@@ -366,6 +397,7 @@ if __name__ == "__main__":
                     # do trabalho 2
                     derivation = parsear(tokens, tabelaLL1)
                     # pro trabalho 3: analisar semanticamente a derivação
+                    #analisadorSemantico(derivation)
 
                     # pra depurar
                     print(f"Linha válida: {linha}")
