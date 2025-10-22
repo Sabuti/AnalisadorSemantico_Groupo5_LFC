@@ -4,12 +4,9 @@
 #
 # Nome do grupo no Canvas: RA3 5
 
-## SEQUENCIA
-# arq1.txt -> Analisador Léxico -> string tokens -> Analisador Sintático -> árvore abstrata -> Analisador Semântico -> 
-
 ## Precisa ter
 # Arquivos de texto = X
-# Utilizar arvore sintatica do Trabalho 2 = X
+# Utilizar arvore sintatica do Trabalho 2 = Sim
 # Criar gramática de atributos = X
 # Implementar analisador semântico para gerar árvore abstrata = X
 # Gerar doc de analise semântica = X
@@ -18,10 +15,11 @@
 # Não precisa gerar código Assembly
 
 import sys # import para gerenciar argumentos de linha de comando
-import math
 
 EPS = 'E' # símbolo para epsilon / vazio
 
+# -------------------------
+# Função para ler arquivo linha por linha
 def lerArquivo(nomeArquivo, linhas):
     try:
         with open(nomeArquivo, 'r') as file:
@@ -37,6 +35,8 @@ def lerArquivo(nomeArquivo, linhas):
         return
     return linhas
 
+# -------------------------
+# Função para separar tokens em uma linha
 def parseExpressao(linha, _tokens_):
     token = ""
     parenteses = 0
@@ -63,7 +63,7 @@ def parseExpressao(linha, _tokens_):
                 _tokens_.append(token)
                 token = ""
             _tokens_.append(char)
-        elif char in "<>":
+        elif char in "><=!":
             if token:
                 _tokens_.append(token)
                 token = ""
@@ -113,7 +113,7 @@ def estadoParenteses(token):
         
 def estadoComparador(token):
     match token:
-        case "<" | ">" | "<=" | ">=" | "=":
+        case "<" | ">" | "<=" | ">=" | "==" | "!=": 
             return True
         case _:
             return False
@@ -208,7 +208,9 @@ def validarRPN(tokens, memoria, erros):
     #melhorar o RPN
     pass 
 
-def construirGramatica(): # nenhuma entrada | saída: dados da gramática, FIRST, FOLLOW, tabelaLL1
+# --------------------------
+# Analisador sintático: constrói a gramática, tabela LL(1)
+def construirGramatica():
 
     def is_nonterminal(sym, G):
         return sym in G # true se sym é um não-terminal em G, false é terminal
@@ -315,7 +317,7 @@ def construirGramatica(): # nenhuma entrada | saída: dados da gramática, FIRST
     G['ITEM'] = [['NUMERO'], ['IDENT'], ['OPERADOR'], ['IFKW'], ['WHILEKW'], ['EXPR']]
     G['NUMERO'] = [['real']]    # token lexical 'real'
     G['IDENT']  = [['ident']]   # token lexical 'ident' (men/MEM/RES etc.)
-    G['OPERADOR'] = [['+'], ['-'], ['*'], ['/'], ['%'], ['^'], ['|'], ['>'], ['res']] 
+    G['OPERADOR'] = [['+'], ['-'], ['*'], ['/'], ['%'], ['^'], ['|'], ['>'], ['<'], ['>='], ['<='], ['=='], ['!='], ['res']] 
     G['IFKW'] = [['if']]        # será token 'if'
     G['WHILEKW'] = [['while']]  # será token 'while'
 
@@ -332,6 +334,8 @@ def construirGramatica(): # nenhuma entrada | saída: dados da gramática, FIRST
         print("Gramática é LL(1).")
         return G, FIRST, FOLLOW, tabelaLL1
 
+# --------------------------
+# Analisador sintático: processa tokens usando a tabela LL(1)
 def parsear(tokens, tabelaLL1): # entrada: vetor de tokens, tabelaLL1
     stack = ['$', 'LINHA'] # pilha inicial com símbolo de início e marcador de fim
     derivation = [] # para armazenar a sequência de derivações
@@ -368,6 +372,8 @@ def parsear(tokens, tabelaLL1): # entrada: vetor de tokens, tabelaLL1
                 raise ValueError(f"Erro de sintaxe: não há produção para {top}, '{current_token}'")
     raise ValueError("Erro de sintaxe: pilha vazia antes do fim dos tokens")
 
+# --------------------------
+# Programa principal
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Uso: python script.py <nome_do_arquivo>")
@@ -395,7 +401,7 @@ if __name__ == "__main__":
 
                     # pra depurar
                     print(f"Linha válida: {linha}")
-                    #print(f"Tokens: {tokens}")
-                    #print(f"Derivações: {derivation}")
+                    print(f"Tokens: {tokens}")
+                    #print(f"Derivações: {derivation}\n")
                 except ValueError as e:
                     print(e)
