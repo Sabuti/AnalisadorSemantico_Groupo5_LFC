@@ -37,7 +37,7 @@ def lerArquivo(nomeArquivo, linhas):
 
 # -------------------------
 # Função para separar tokens em uma linha
-def parseExpressao(linha, _tokens_):
+def parseExpressao(linha, _tokens_): ## revisar erro daqui
     token = ""
     parenteses = 0
     i = 0
@@ -57,7 +57,7 @@ def parseExpressao(linha, _tokens_):
             else:
                 parenteses -= 1
                 if parenteses < 0:
-                    raise ValueError("Erro: parêntese fechado sem correspondente.")
+                    raise ValueError("Erro Sintático: parêntese fechado sem correspondente.")
         elif char in "+-*/%^":  # operadores
             if token:
                 _tokens_.append(token)
@@ -82,7 +82,7 @@ def parseExpressao(linha, _tokens_):
     if token:
         _tokens_.append(token)
     if parenteses != 0:
-        raise ValueError("Erro: parênteses desbalanceados.")
+        raise ValueError("Erro Sintático: parêntese aberto sem correspondente.")
     return True
 
 #funções de estado para o analisador léxico
@@ -92,7 +92,6 @@ def estadoNumero(token):
     try:
         if token.count(".") > 1: # Checa se há mais de um ponto decimal
             return False
-        float(token)
         return True
     except ValueError:
         return False
@@ -156,7 +155,12 @@ def analisadorLexico(tokens):
             tokens_convertidos.append(token)
             continue
         if estadoNumero(token):
-            tokens_convertidos.append("real")  # converte número para token 'real'
+            if token.count(".") == 1:
+                token = float(token)
+                tokens_convertidos.append("float")
+            else:
+                token = int(token)
+                tokens_convertidos.append("int")
             continue
         if estadoComparador(token):
             tokens_convertidos.append(token)
@@ -200,25 +204,31 @@ def analisadorSemantico(derivacao, memoria, historico_resultados):
         # Operação aritmética
         elif any(op in producao for op in ['+', '-', '*', '/', '%', '^']):
             arvore_abstrata.append(('OPERACAO', producao))
-            if producao.count('real') + producao.count('ident') < 2:
-                erros_semanticos.append("Erro: operador aritmético com operandos insuficientes.")
+            if producao.count('float') + producao.count('ident') < 2:
+                erros_semanticos.append("Erro Semântico: operador aritmético com operandos insuficientes.")
+            elif any(op in producao for op in ['^', '|']) and any(tipo == 'float' for tipo in producao): # potência ou divisão real
+                erros_semanticos.append("Erro Semântico: operador potência ou raiz quadrada requer operandos inteiros.")
+
+        # Operações de divisão e módulo
+        elif (op in producao for op in ['/', '%']) and any(tipo == 'float' for tipo in producao):
+            erros_semanticos.append("Erro Semântico: divisão ou módulo requer operandos inteiros.")
 
         # Comparação
         elif any(op in producao for op in ['<', '>', '<=', '>=', '==', '!=']):
             arvore_abstrata.append(('COMPARACAO', producao))
-            if producao.count('real') + producao.count('ident') < 2:
-                erros_semanticos.append("Erro: operador de comparação sem dois operandos.")
+            if producao.count('float') + producao.count('ident') < 2:
+                erros_semanticos.append("Erro Semântico: operador de comparação sem dois operandos.")
 
         # Estruturas de controle
         elif 'if' in producao:
             arvore_abstrata.append(('CONDICAO_IF', producao))
             if not any(op in producao for op in ['<', '>', '==', '<=', '>=', '!=']):
-                erros_semanticos.append("Erro: IF sem condição de comparação.")
+                erros_semanticos.append("Erro Semântico: IF sem condição de comparação.")
 
         elif 'while' in producao:
             arvore_abstrata.append(('LOOP_WHILE', producao))
             if not any(op in producao for op in ['<', '>', '==', '<=', '>=', '!=']):
-                erros_semanticos.append("Erro: WHILE sem condição de comparação.")
+                erros_semanticos.append("Erro Semântico: WHILE sem condição de comparação.")
 
         # Variáveis MEM
         elif 'ident' in producao:
@@ -247,7 +257,7 @@ def analisadorSemantico(derivacao, memoria, historico_resultados):
     return memoria, erros_semanticos, arvore_abstrata
 
 
-def validarRPN(tokens, memoria, erros):
+def validarRPN(tokens, derivacao, memoria, erros):
     erros = []
     pilha = []
     
@@ -259,7 +269,7 @@ def validarRPN(tokens, memoria, erros):
     
     # Simula avaliação RPN
     for token in tokens:
-        if token in ['real', 'ident']:
+        if token in ['real', 'float', 'ident']:
             pilha.append('operando')
         elif token in ['+', '-', '*', '/', '%', '^', '|', '<', '>', '<=', '>=', '==', '!=', 'res']:
             if len(pilha) < 2:
@@ -316,7 +326,6 @@ def gerarDocumentacaoSemantica(memoria, todos_erros, nome_arquivo):
 
 
 # --------------------------
-
 # Analisador sintático: constrói a gramática, tabela LL(1)
 def processarResultadoExpressao(derivacao, memoria, historico_resultados):
     """ 
@@ -459,7 +468,7 @@ def construirGramatica():
     G['EXPR']  = [['(', 'ITEMS', ')']]
     G['ITEMS'] = [['ITEM', 'ITEMS'], [EPS]]
     G['ITEM'] = [['NUMERO'], ['IDENT'], ['OPERADOR'], ['IFKW'], ['WHILEKW'], ['EXPR']]
-    G['NUMERO'] = [['real']]    # token lexical 'real'
+    G['NUMERO'] = [['float'], ['int']]    # token lexical 'float' ou 'int'
     G['IDENT']  = [['ident']]   # token lexical 'ident' (men/MEM/RES etc.)
     G['OPERADOR'] = [['+'], ['-'], ['*'], ['/'], ['%'], ['^'], ['|'], ['>'], ['<'], ['>='], ['<='], ['=='], ['!='], ['res']] 
     G['IFKW'] = [['if']]        # será token 'if'
@@ -480,7 +489,7 @@ def construirGramatica():
 
 # --------------------------
 # Analisador sintático: processa tokens usando a tabela LL(1)
-def parsear(tokens, tabelaLL1): # entrada: vetor de tokens, tabelaLL1
+def analisadorSintatico(tokens, tabelaLL1): # entrada: vetor de tokens, tabelaLL1
     stack = ['$', 'LINHA'] # pilha inicial com símbolo de início e marcador de fim
     derivation = [] # para armazenar a sequência de derivações
     index = 0 # índice para rastrear a posição atual nos tokens   
@@ -503,7 +512,7 @@ def parsear(tokens, tabelaLL1): # entrada: vetor de tokens, tabelaLL1
             if top == current_token: # se coincidem, consome o token
                 index += 1
             else:
-                raise ValueError(f"Erro de sintaxe: esperado '{top}', encontrado '{current_token}'")
+                raise ValueError(f"Erro Sintático: esperado '{top}', encontrado '{current_token}'")
         else: # topo é um não-terminal
             key = (top, current_token)
             if key in tabelaLL1:
@@ -513,8 +522,8 @@ def parsear(tokens, tabelaLL1): # entrada: vetor de tokens, tabelaLL1
                     if sym != EPS: # não empilha epsilon
                         stack.append(sym)
             else:
-                raise ValueError(f"Erro de sintaxe: não há produção para {top}, '{current_token}'")
-    raise ValueError("Erro de sintaxe: pilha vazia antes do fim dos tokens")
+                raise ValueError(f"Erro Sintático: não há produção para {top}, '{current_token}'")
+    raise ValueError("Erro Sintático: pilha vazia antes do fim dos tokens")
 
 # --------------------------
 # Programa principal
@@ -539,7 +548,7 @@ if __name__ == "__main__":
                     parseExpressao(linha, tokens)
                     tokens = analisadorLexico(tokens)
                     # do trabalho 2
-                    derivation = parsear(tokens, tabelaLL1)
+                    derivation = analisadorSintatico(tokens, tabelaLL1)
                     # pro trabalho 3: analisar semanticamente a derivação
                     #analisadorSemantico(derivation)
                     memoria, erros_semanticos, arvore_abstrata = analisadorSemantico(derivation, memoria, resultados)
