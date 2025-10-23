@@ -177,36 +177,180 @@ def analisadorLexico(tokens):
 
     return tokens_convertidos
 
-def analisadorSemantico(derivacao, memoria):
+def analisadorSemantico(derivacao, memoria, historico_resultados):
     """
-    Analisa semanticamente a árvore sintática
-    Retorna: (árvore_abstrata, memoria_atualizada, erros_semanticos)
+    Executa a análise semântica sobre a derivação gerada pelo analisador sintático.
+    Retorna: memoria_atualizada, erros_semanticos, arvore_abstrata
     """
-    erros = []
+    erros_semanticos = []
     arvore_abstrata = []
-    pilha_tipos = []  # Para verificar tipos na avaliação RPN
-    
+    contador_mem = 1
+
     for nao_terminal, producao in derivacao:
-        if nao_terminal == 'RPN_SEQ':
-            # Validar expressão RPN corretamente
-            if not validarRPN(producao, memoria, erros):
-                return None, memoria, erros
-                
-        elif nao_terminal == 'IDENT':
-            identificador = producao[0]
-            if identificador.startswith("MEM"):
-                # Verificar se MEM foi inicializado
-                if identificador not in memoria:
-                    erros.append(f"Erro semântico: Memória '{identificador}' não inicializada")
-            elif identificador == "RES":
-                if "RES" not in memoria:
-                    erros.append(f"Erro semântico: RES não inicializado")
-                    
-    return arvore_abstrata, memoria, erros
+        if not producao:
+            continue
+
+        # Atribuição simulada: (real ident)
+        if len(producao) >= 2 and producao[0] == 'real' and producao[1] == 'ident':
+            nome = producao[1]
+            contador_mem += 1
+            memoria = adicionarMemoria(memoria, nome, tipo='real', inicializada=True)
+            arvore_abstrata.append(('ATRIB', nome, producao[0]))
+
+        # Operação aritmética
+        elif any(op in producao for op in ['+', '-', '*', '/', '%', '^']):
+            arvore_abstrata.append(('OPERACAO', producao))
+            if producao.count('real') + producao.count('ident') < 2:
+                erros_semanticos.append("Erro: operador aritmético com operandos insuficientes.")
+
+        # Comparação
+        elif any(op in producao for op in ['<', '>', '<=', '>=', '==', '!=']):
+            arvore_abstrata.append(('COMPARACAO', producao))
+            if producao.count('real') + producao.count('ident') < 2:
+                erros_semanticos.append("Erro: operador de comparação sem dois operandos.")
+
+        # Estruturas de controle
+        elif 'if' in producao:
+            arvore_abstrata.append(('CONDICAO_IF', producao))
+            if not any(op in producao for op in ['<', '>', '==', '<=', '>=', '!=']):
+                erros_semanticos.append("Erro: IF sem condição de comparação.")
+
+        elif 'while' in producao:
+            arvore_abstrata.append(('LOOP_WHILE', producao))
+            if not any(op in producao for op in ['<', '>', '==', '<=', '>=', '!=']):
+                erros_semanticos.append("Erro: WHILE sem condição de comparação.")
+
+        # Variáveis MEM
+        elif 'ident' in producao:
+            nome = producao[0]
+            contador_mem += 1
+            if nome.startswith("MEM"):
+                if nome not in memoria:
+                    erros_semanticos.append(f"Erro: variável '{nome}' usada sem declaração prévia.")
+                    memoria = adicionarMemoria(memoria, nome, tipo='real', inicializada=False)
+            arvore_abstrata.append(('IDENT', nome))
+        
+        elif 'res' in producao:
+            if 'RES' not in memoria:
+                memoria = adicionarMemoria(memoria, 'RES', tipo='real', inicializada=False)
+            arvore_abstrata.append(('IDENT', 'RES'))
+
+    # Atualizar RES
+    if historico_resultados:
+        memoria = adicionarMemoria(memoria, 'RES', tipo='real', inicializada=True)
+        memoria['RES']['valor'] = historico_resultados[-1]
+
+    # Validação geral
+    if not memoria:
+        erros_semanticos.append("Aviso: nenhuma variável MEM ou RES declarada.")
+
+    return memoria, erros_semanticos, arvore_abstrata
+
 
 def validarRPN(tokens, memoria, erros):
-    #melhorar o RPN
-    pass 
+    erros = []
+    pilha = []
+    
+    # Extrai tokens da derivação para validar RPN
+    tokens = []
+    for _, producao in derivacao:
+        if producao and producao[0] not in ['(', ')']:  # Ignora parênteses
+            tokens.extend(producao)
+    
+    # Simula avaliação RPN
+    for token in tokens:
+        if token in ['real', 'ident']:
+            pilha.append('operando')
+        elif token in ['+', '-', '*', '/', '%', '^', '|', '<', '>', '<=', '>=', '==', '!=', 'res']:
+            if len(pilha) < 2:
+                erros.append(f"Erro RPN: Operador '{token}' sem operandos suficientes")
+                return False, erros
+            pilha.pop()  # Remove operando 2
+            pilha.pop()  # Remove operando 1
+            pilha.append('resultado')  # Adiciona resultado
+    
+    # No final deve sobrar exatamente um resultado
+    if len(pilha) != 1:
+        erros.append("Erro RPN: Expressão mal formada")
+        return False, erros
+    
+    return True, erros
+
+
+def inicializarMemoria():
+    """Inicializa a memória vazia"""
+    return {}
+
+
+def adicionarMemoria(memoria, nome, tipo='desconhecido', inicializada=False):
+    """Adiciona um item à memória"""
+    memoria[nome] = {
+        'tipo': tipo,
+        'inicializada': inicializada,
+        'usada': False
+    }
+    return memoria
+
+def gerarDocumentacaoSemantica(memoria, todos_erros, nome_arquivo):
+    """Gera documentação da análise semântica"""
+    nome_base = nome_arquivo.split('.')[0]
+    with open(f"semantico_{nome_base}.txt", "w", encoding="utf-8") as doc:
+        doc.write("=== ANÁLISE SEMÂNTICA ===\n\n")
+        doc.write("MEMÓRIA (Tabela de Símbolos):\n")
+        doc.write("-" * 50 + "\n")
+        if memoria:
+            for simbolo, info in memoria.items():
+                doc.write(f"{simbolo}: {info}\n")
+        else:
+            doc.write("Memória vazia\n")
+        doc.write("\nERROS SEMÂNTICOS ENCONTRADOS:\n")
+        doc.write("-" * 50 + "\n")
+        if todos_erros:
+            for i, erro in enumerate(todos_erros, 1):
+                doc.write(f"{i:2d}. {erro}\n")
+        else:
+            doc.write("Nenhum erro semântico encontrado.\n")
+        doc.write(f"\nRESUMO:\n")
+        doc.write(f"- Total de itens na memória: {len(memoria)}\n")
+        doc.write(f"- Total de erros: {len(todos_erros)}\n")
+
+
+# --------------------------
+
+# Analisador sintático: constrói a gramática, tabela LL(1)
+def processarResultadoExpressao(derivacao, memoria, historico_resultados):
+    """ 
+    Processa uma expressão regular e calcula seu resultado 
+    Retorna o resultado (simulado) e atualiza o histórico 
+    """
+    # Simula o cálculo do resultado (implementação simplificada)
+    resultado_simulado = 0.0
+    # Lógica simplificada para calcular resultado
+    for _, producao in derivacao:
+        if producao and 'real' in producao:
+            resultado_simulado += 1.0  # soma simulada
+
+    
+    # Adiciona ao histórico
+    historico_resultados.append(resultado_simulado)
+    # Atualiza RES com o último resultado
+    memoria = adicionarMemoria(memoria, 'RES', 'numero', True)
+    memoria['RES']['valor'] = resultado_simulado
+    return memoria, historico_resultados, resultado_simulado
+
+
+def identificarTipoLinha(derivacao):
+    """ Identifica se a linha é uma expressão, atribuição ou consulta """
+    for nao_terminal, producao in derivacao:
+        if nao_terminal == 'ATRIBUICAO_MEM':
+            return 'atribuicao_mem'
+        elif nao_terminal == 'CONSULTA_RES':
+            return 'consulta_res'
+        elif nao_terminal == 'EXPR':
+            return 'expressao'
+    
+    return 'desconhecido'
+
 
 # --------------------------
 # Analisador sintático: constrói a gramática, tabela LL(1)
@@ -398,7 +542,8 @@ if __name__ == "__main__":
                     derivation = parsear(tokens, tabelaLL1)
                     # pro trabalho 3: analisar semanticamente a derivação
                     #analisadorSemantico(derivation)
-
+                    memoria, erros_semanticos, arvore_abstrata = analisadorSemantico(derivation, memoria, resultados)
+                    gerarDocumentacaoSemantica(memoria, erros_semanticos, f"{caminho}_linha{numero_linha}")
                     # pra depurar
                     print(f"Linha válida: {linha}")
                     print(f"Tokens: {tokens}")
