@@ -15,6 +15,7 @@
 # Não precisa gerar código Assembly
 
 import sys # import para gerenciar argumentos de linha de comando
+import json
 
 EPS = 'E' # símbolo para epsilon / vazio
 
@@ -63,6 +64,13 @@ def parseExpressao(linha, _tokens_): ## revisar erro daqui
                 _tokens_.append(token)
                 token = ""
             _tokens_.append(char)
+
+        elif char == '|':  # operador raiz quadrada
+            if token:
+                _tokens_.append(token)
+                token = ""
+            _tokens_.append(char)
+
         elif char in "><=!":
             if token:
                 _tokens_.append(token)
@@ -112,7 +120,7 @@ def estadoParenteses(token):
         
 def estadoComparador(token):
     match token:
-        case "<" | ">" | "<=" | ">=" | "==" | "!=": 
+        case "<" | ">" | "<=" | ">=" | "==" | "!=" | "<>": 
             return True
         case _:
             return False
@@ -138,159 +146,85 @@ def RESorMEM(token):
                 else:
                     return False
 
-    if token in {"RES", "MEM", "IF", "WHILE"}:
         return True
-    return True
 
 # -------------------------
 # Analisador léxico: valida CADA token isoladamente
 def analisadorLexico(tokens):
     tokens_convertidos = []
+    tokens_valores = []
 
     for token in tokens:
         if estadoParenteses(token):
             tokens_convertidos.append(token)
+            tokens_valores.append(token)
             continue
         if estadoOperador(token):
             tokens_convertidos.append(token)
+            tokens_valores.append(token)
             continue
         if estadoNumero(token):
             if token.count(".") == 1:
                 token = float(token)
                 tokens_convertidos.append("float")
+                tokens_valores.append(float(token))
             else:
                 token = int(token)
                 tokens_convertidos.append("int")
+                tokens_valores.append(int(token))
             continue
         if estadoComparador(token):
             tokens_convertidos.append(token)
+            tokens_valores.append(token)
             continue
         if RESorMEM(token):
             if token == "RES":
                 tokens_convertidos.append("res")  # converte comando RES para token 'res'
+                tokens_valores.append(token)
             elif token == "IF":
                 tokens_convertidos.append("if") # converte comando IF para token 'if'
+                tokens_valores.append(token)
             elif token == "WHILE":
                 tokens_convertidos.append("while") # converte comando WHILE para token 'while'
+                tokens_valores.append(token)
             else:
                 tokens_convertidos.append("ident")  # converte outros identificadores para token 'ident'
+                tokens_valores.append(token)
             continue
 
         # Se não passou em nada, é inválido
         raise ValueError(f"Erro léxico: token inválido -> {token}")
 
-    return tokens_convertidos
+    return tokens_convertidos, tokens_valores
 
-def analisadorSemantico(derivacao, memoria, historico_resultados):
-    """
-    Executa a análise semântica sobre a derivação gerada pelo analisador sintático.
-    Retorna: memoria_atualizada, erros_semanticos, arvore_abstrata
-    """
-    erros_semanticos = []
-    arvore_abstrata = []
-    contador_mem = 1
+def inicializarTabelaSimbolos():
+    """Inicializa a tabela de símbolos vazia"""
+    return {}
 
-    for nao_terminal, producao in derivacao:
-        if not producao:
-            continue
+def adicionarSimbolo(tabela, nome, tipo='desconhecido', inicializada=False, valor=None, linha = 0):
+    """Adiciona um símbolo à tabela de símbolos"""
+    tabela[nome] = {
+        'tipo': tipo,
+        'inicializada': inicializada,
+        'valor': valor,
+        'linha': linha,
+        'usada': False
+    }
+    return tabela
 
-        # Atribuição simulada: (real ident)
-        if len(producao) >= 2 and producao[0] == 'real' and producao[1] == 'ident':
-            nome = producao[1]
-            contador_mem += 1
-            memoria = adicionarMemoria(memoria, nome, tipo='real', inicializada=True)
-            arvore_abstrata.append(('ATRIB', nome, producao[0]))
+def buscarSimbolo(tabela, nome):
+    """Busca um símbolo na tabela de símbolos"""
+    return tabela.get(nome, None)
 
-        # Operação aritmética
-        elif any(op in producao for op in ['+', '-', '*', '/', '%', '^']):
-            arvore_abstrata.append(('OPERACAO', producao))
-            if producao.count('float') + producao.count('ident') < 2:
-                erros_semanticos.append("Erro Semântico: operador aritmético com operandos insuficientes.")
-            elif any(op in producao for op in ['^', '|']) and any(tipo == 'float' for tipo in producao): # potência ou divisão real
-                erros_semanticos.append("Erro Semântico: operador potência ou raiz quadrada requer operandos inteiros.")
-
-        # Operações de divisão e módulo
-        elif (op in producao for op in ['/', '%']) and any(tipo == 'float' for tipo in producao):
-            erros_semanticos.append("Erro Semântico: divisão ou módulo requer operandos inteiros.")
-
-        # Comparação
-        elif any(op in producao for op in ['<', '>', '<=', '>=', '==', '!=']):
-            arvore_abstrata.append(('COMPARACAO', producao))
-            if producao.count('float') + producao.count('ident') < 2:
-                erros_semanticos.append("Erro Semântico: operador de comparação sem dois operandos.")
-
-        # Estruturas de controle
-        elif 'if' in producao:
-            arvore_abstrata.append(('CONDICAO_IF', producao))
-            if not any(op in producao for op in ['<', '>', '==', '<=', '>=', '!=']):
-                erros_semanticos.append("Erro Semântico: IF sem condição de comparação.")
-
-        elif 'while' in producao:
-            arvore_abstrata.append(('LOOP_WHILE', producao))
-            if not any(op in producao for op in ['<', '>', '==', '<=', '>=', '!=']):
-                erros_semanticos.append("Erro Semântico: WHILE sem condição de comparação.")
-
-        # Variáveis MEM
-        elif 'ident' in producao:
-            nome = producao[0]
-            contador_mem += 1
-            if nome.startswith("MEM"):
-                if nome not in memoria:
-                    erros_semanticos.append(f"Erro: variável '{nome}' usada sem declaração prévia.")
-                    memoria = adicionarMemoria(memoria, nome, tipo='real', inicializada=False)
-            arvore_abstrata.append(('IDENT', nome))
-        
-        elif 'res' in producao:
-            if 'RES' not in memoria:
-                memoria = adicionarMemoria(memoria, 'RES', tipo='real', inicializada=False)
-            arvore_abstrata.append(('IDENT', 'RES'))
-
-    # Atualizar RES
-    if historico_resultados:
-        memoria = adicionarMemoria(memoria, 'RES', tipo='real', inicializada=True)
-        memoria['RES']['valor'] = historico_resultados[-1]
-
-    # Validação geral
-    if not memoria:
-        erros_semanticos.append("Aviso: nenhuma variável MEM ou RES declarada.")
-
-    return memoria, erros_semanticos, arvore_abstrata
-
-
-def validarRPN(tokens, derivacao, memoria, erros):
-    erros = []
-    pilha = []
-    
-    # Extrai tokens da derivação para validar RPN
-    tokens = []
-    for _, producao in derivacao:
-        if producao and producao[0] not in ['(', ')']:  # Ignora parênteses
-            tokens.extend(producao)
-    
-    # Simula avaliação RPN
-    for token in tokens:
-        if token in ['real', 'float', 'ident']:
-            pilha.append('operando')
-        elif token in ['+', '-', '*', '/', '%', '^', '|', '<', '>', '<=', '>=', '==', '!=', 'res']:
-            if len(pilha) < 2:
-                erros.append(f"Erro RPN: Operador '{token}' sem operandos suficientes")
-                return False, erros
-            pilha.pop()  # Remove operando 2
-            pilha.pop()  # Remove operando 1
-            pilha.append('resultado')  # Adiciona resultado
-    
-    # No final deve sobrar exatamente um resultado
-    if len(pilha) != 1:
-        erros.append("Erro RPN: Expressão mal formada")
-        return False, erros
-    
-    return True, erros
 
 
 def inicializarMemoria():
     """Inicializa a memória vazia"""
     return {}
 
+def buscarSimbolo(tabela, nome):
+    """Busca um símbolo na tabela de símbolos"""
+    return tabela.get(nome, None)
 
 def adicionarMemoria(memoria, nome, tipo='desconhecido', inicializada=False):
     """Adiciona um item à memória"""
@@ -301,64 +235,8 @@ def adicionarMemoria(memoria, nome, tipo='desconhecido', inicializada=False):
     }
     return memoria
 
-def gerarDocumentacaoSemantica(memoria, todos_erros, nome_arquivo):
-    """Gera documentação da análise semântica"""
-    nome_base = nome_arquivo.split('.')[0]
-    with open(f"semantico_{nome_base}.txt", "w", encoding="utf-8") as doc:
-        doc.write("=== ANÁLISE SEMÂNTICA ===\n\n")
-        doc.write("MEMÓRIA (Tabela de Símbolos):\n")
-        doc.write("-" * 50 + "\n")
-        if memoria:
-            for simbolo, info in memoria.items():
-                doc.write(f"{simbolo}: {info}\n")
-        else:
-            doc.write("Memória vazia\n")
-        doc.write("\nERROS SEMÂNTICOS ENCONTRADOS:\n")
-        doc.write("-" * 50 + "\n")
-        if todos_erros:
-            for i, erro in enumerate(todos_erros, 1):
-                doc.write(f"{i:2d}. {erro}\n")
-        else:
-            doc.write("Nenhum erro semântico encontrado.\n")
-        doc.write(f"\nRESUMO:\n")
-        doc.write(f"- Total de itens na memória: {len(memoria)}\n")
-        doc.write(f"- Total de erros: {len(todos_erros)}\n")
 
 
-# --------------------------
-# Analisador sintático: constrói a gramática, tabela LL(1)
-def processarResultadoExpressao(derivacao, memoria, historico_resultados):
-    """ 
-    Processa uma expressão regular e calcula seu resultado 
-    Retorna o resultado (simulado) e atualiza o histórico 
-    """
-    # Simula o cálculo do resultado (implementação simplificada)
-    resultado_simulado = 0.0
-    # Lógica simplificada para calcular resultado
-    for _, producao in derivacao:
-        if producao and 'real' in producao:
-            resultado_simulado += 1.0  # soma simulada
-
-    
-    # Adiciona ao histórico
-    historico_resultados.append(resultado_simulado)
-    # Atualiza RES com o último resultado
-    memoria = adicionarMemoria(memoria, 'RES', 'numero', True)
-    memoria['RES']['valor'] = resultado_simulado
-    return memoria, historico_resultados, resultado_simulado
-
-
-def identificarTipoLinha(derivacao):
-    """ Identifica se a linha é uma expressão, atribuição ou consulta """
-    for nao_terminal, producao in derivacao:
-        if nao_terminal == 'ATRIBUICAO_MEM':
-            return 'atribuicao_mem'
-        elif nao_terminal == 'CONSULTA_RES':
-            return 'consulta_res'
-        elif nao_terminal == 'EXPR':
-            return 'expressao'
-    
-    return 'desconhecido'
 
 
 # --------------------------
@@ -487,6 +365,53 @@ def construirGramatica():
         print("Gramática é LL(1).")
         return G, FIRST, FOLLOW, tabelaLL1
 
+# Definição da Gramática de Atributos
+def definirGramaticaAtributos():
+    """
+    Define a gramática de atributos da linguagem.
+    Retorna as regras semânticas para verificação de tipos.
+    """
+    regras_semanticas = {
+        'operadores_aritmeticos': {
+            '+': {'aceita': ['int', 'real'], 'retorna': 'promover'},
+            '-': {'aceita': ['int', 'real'], 'retorna': 'promover'},
+            '*': {'aceita': ['int', 'real'], 'retorna': 'promover'},
+            '|': {'aceita': ['int', 'real'], 'retorna': 'real'},  # Divisão real sempre retorna real
+            '/': {'aceita': ['int'], 'retorna': 'int'},  # Divisão inteira
+            '%': {'aceita': ['int'], 'retorna': 'int'},  # Módulo
+            '^': {'aceita_base': ['int', 'real'], 'aceita_exp': ['int'], 'retorna': 'promover'}
+        },
+        'operadores_relacionais': {
+            '<': {'aceita': ['int', 'real'], 'retorna': 'booleano'},
+            '>': {'aceita': ['int', 'real'], 'retorna': 'booleano'},
+            '<=': {'aceita': ['int', 'real'], 'retorna': 'booleano'},
+            '>=': {'aceita': ['int', 'real'], 'retorna': 'booleano'},
+            '==': {'aceita': ['int', 'real'], 'retorna': 'booleano'},
+            '!=': {'aceita': ['int', 'real'], 'retorna': 'booleano'},
+            '<>': {'aceita': ['int', 'real'], 'retorna': 'booleano'}
+        },
+        'estruturas_controle': {
+            'if': {'condicao': 'booleano', 'retorna': 'tipo_ramos'},
+            'while': {'condicao': 'booleano', 'retorna': 'tipo_corpo'}
+        },
+        'comandos_especiais': {
+            'res': {'parametro': 'int', 'retorna': 'tipo_resultado'},
+            'mem_atrib': {'valor': ['int', 'real'], 'retorna': 'tipo_valor'},
+            'mem_leitura': {'retorna': 'tipo_memoria'}
+        }
+    }
+    
+    return regras_semanticas
+
+def promoverTipo(tipo1, tipo2):
+    """Promoção de tipos: se um é real, o resultado é real"""
+    if tipo1 == 'real' or tipo2 == 'real':
+        return 'real'
+    if tipo1 == 'int' and tipo2 == 'int':
+        return 'int'
+    if tipo1 == 'booleano' or tipo2 == 'booleano':
+        return 'booleano'
+    return 'desconhecido'
 # --------------------------
 # Analisador sintático: processa tokens usando a tabela LL(1)
 def analisadorSintatico(tokens, tabelaLL1): # entrada: vetor de tokens, tabelaLL1
