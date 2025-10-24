@@ -450,37 +450,215 @@ def analisadorSintatico(tokens, tabelaLL1): # entrada: vetor de tokens, tabelaLL
                 raise ValueError(f"Erro Sintático: não há produção para {top}, '{current_token}'")
     raise ValueError("Erro Sintático: pilha vazia antes do fim dos tokens")
 
-# --------------------------
-# Programa principal
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Uso: python script.py <nome_do_arquivo>")
-    else:
-        caminho = sys.argv[1]
-        linhas = []
-        memoria = {}
-        resultados = []
-        G, FIRST, FOLLOW, tabelaLL1 = construirGramatica()
-        lerArquivo(caminho, linhas)
-        with open(caminho, "r", encoding="utf-8") as f:
-            for numero_linha, linha in enumerate(f, start=1):
-                linha = linha.strip()
-                if not linha:
-                    continue
-                tokens = []
-                try:
-                    # do trabalho 1
-                    parseExpressao(linha, tokens)
-                    tokens = analisadorLexico(tokens)
-                    # do trabalho 2
-                    derivation = analisadorSintatico(tokens, tabelaLL1)
-                    # pro trabalho 3: analisar semanticamente a derivação
-                    #analisadorSemantico(derivation)
-                    memoria, erros_semanticos, arvore_abstrata = analisadorSemantico(derivation, memoria, resultados)
-                    gerarDocumentacaoSemantica(memoria, erros_semanticos, f"{caminho}_linha{numero_linha}")
-                    # pra depurar
-                    print(f"Linha válida: {linha}")
-                    print(f"Tokens: {tokens}")
-                    #print(f"Derivações: {derivation}\n")
-                except ValueError as e:
-                    print(e)
+def analisadorSemantico(derivacao, tokens_valores, tabela_simbolos, regras_semanticas, historico_resultados, numero_linha):
+    """
+    Executa a análise semântica sobre a derivação gerada pelo analisador sintático.
+    Retorna: memoria_atualizada, erros_semanticos, arvore_abstrata
+    """
+    erros_semanticos = []
+    arvore_abstrata = []
+    pilha_tipos = []
+    pilha_valores = []
+    indx = 1
+
+    for nao_terminal, producao in derivacao:
+        if not producao or producao == [EPS]:
+            continue
+        
+        for simbolo in producao:
+            if simbolo == 'int':
+                tipo = 'int'
+                valor = tokens_valores[indx]
+                indx += 1
+                pilha_tipos.append(tipo)
+                pilha_valores.append(valor)
+                arvore_abstrata.append({
+                    'tipo': tipo,
+                    'valor': valor,
+                    'linha': numero_linha
+                })
+            if simbolo == 'float':
+                tipo = 'float'
+                valor = tokens_valores[indx]
+                indx += 1
+                pilha_tipos.append(tipo)
+                pilha_valores.append(valor)
+                arvore_abstrata.append({
+                    'tipo': tipo,
+                    'valor': valor,
+                    'linha': numero_linha
+                })
+            elif simbolo == 'ident':
+                nome = tokens_valores[indx]
+                indx += 1
+                if len(pilha_tipos) > 0:
+                    tipo = pilha_tipos.pop()
+                    valor = pilha_valores[-1] if len(pilha_valores) > 0 else None
+                    tabela_simbolos = adicionarSimbolo(tabela_simbolos, nome, tipo, True, valor, numero_linha)
+                    arvore_abstrata.append({
+                        'tipo': tipo,
+                        'nome': nome,
+                        'valor': valor,
+                        'linha': numero_linha
+                    })
+                else:
+                    info = buscarSimbolo(tabela_simbolos, nome)
+                    if info is None:
+                        erros_semanticos.append(f"Linha {numero_linha}: Uso de identificador não declarado '{nome}'.")
+                        tipo = 'desconhecido'
+                        valor = None
+                    elif not info['inicializada']:
+                        erros_semanticos.append(f"Linha {numero_linha}: Uso de identificador não inicializado '{nome}'.")
+                        tipo = info['tipo']
+                        valor = None
+                    else:
+                        tipo = info['tipo']
+                        valor = info['valor']
+                        tabela_simbolos[nome]['usada'] = True
+                    pilha_tipos.append(tipo)
+                    pilha_valores.append(valor)
+                    arvore_abstrata.append({
+                        'tipo': tipo,
+                        'nome': nome,
+                        'valor': valor,
+                        'linha': numero_linha
+                    })
+            elif simbolo == 'res':
+                if len(pilha_tipos) > 0:
+                    if pilha_tipos[-1] != 'int':
+                        erros_semanticos.append(f"Linha {numero_linha}: Comando RES espera um parâmetro do tipo 'int', mas recebeu '{pilha_tipos[-1]}'.")
+                    else:
+                        n = int(pilha_valores.pop())
+                        if n < 1 or n > len(historico_resultados):
+                            erros_semanticos.append(f"Linha {numero_linha}: Comando RES com índice fora do intervalo: {n}.")
+                            tipo = 'desconhecido'
+                        elif n >= len(historico_resultados):
+                            erros_semanticos.append(f"Linha {numero_linha}: Comando RES com índice igual ao tamanho do histórico: {n}.")
+                            tipo = 'desconhecido'
+                        else:
+                            indx = len(historico_resultados) - n
+                            tipo = historico_resultados[indx][tipo]
+
+                    pilha_tipos.pop()  # remove o tipo do parâmetro
+                    pilha_valores.pop()  # remove o valor do parâmetro
+                    pilha_tipos.append(tipo)
+                    pilha_valores.append(None)  # valor desconhecido
+
+                    arvore_abstrata.append({
+                        'tipo': tipo,
+                        'comando': 'res',
+                        'parametro': n,
+                        'linha': numero_linha
+                    })
+                
+                elif simbolo in {'+', '-', '*', '/', '%', '^', '|'}:
+                    if len(pilha_tipos) < 2:
+                        erros_semanticos.append(f"Linha {numero_linha}: Operador '{simbolo}' requer dois operandos.")
+                        continue
+
+                    tipo2 = pilha_tipos.pop()
+                    tipo1 = pilha_tipos.pop()
+                    pilha_valores.pop()
+                    pilha_valores.pop()
+                    regras = regras_semanticas['operadores_aritmeticos'].get(simbolo, None)
+
+                    if simbolo == '^':
+                        if tipo1 not in regras['aceita_base']:
+                            erros_semanticos.append(f"Linha {numero_linha}: Operador '{simbolo}' não aceita base do tipo '{tipo1}'.")
+                        if tipo2 not in regras['aceita_exp']:
+                            erros_semanticos.append(f"Linha {numero_linha}: Operador '{simbolo}' não aceita expoente do tipo '{tipo2}'.")
+                    elif simbolo in {'/', '%'}:
+                        if tipo1 != 'int' or tipo2 != 'int':
+                            erros_semanticos.append(f"Linha {numero_linha}: Operador '{simbolo}' requer operandos do tipo 'int'.")
+                        tipo_resultado = regras['retorna']
+                    
+                    elif simbolo == '|':
+                        if tipo1 not in regras['aceita'] or tipo2 not in regras['aceita']:
+                            erros_semanticos.append(f"Linha {numero_linha}: Operador '{simbolo}' requer operandos do tipo 'int' ou 'real'.")
+                        tipo_resultado = regras['retorna']
+                    else:
+                        if tipo1 not in regras['aceita'] or tipo2 not in regras['aceita']:
+                            erros_semanticos.append(f"Linha {numero_linha}: Operador '{simbolo}' requer operandos do tipo 'int' ou 'real'.")
+                        tipo_resultado = promoverTipo(tipo1, tipo2)
+
+                    pilha_tipos.append(tipo_resultado)
+                    pilha_valores.append(None)  # valor desconhecido
+
+                    arvore_abstrata.append({
+                        'tipo': tipo_resultado,
+                        'operador': simbolo,
+                        'operandos': [tipo1, tipo2],
+                        'linha': numero_linha
+                    })
+
+                elif simbolo in {'<', '>', '<=', '>=', '==', '!=', '<>'}:
+                    if len(pilha_tipos) < 2:
+                        erros_semanticos.append(f"Linha {numero_linha}: Operador '{simbolo}' requer dois operandos.")
+                        continue
+
+                    tipo2 = pilha_tipos.pop()
+                    tipo1 = pilha_tipos.pop()
+                    pilha_valores.pop()
+                    pilha_valores.pop()
+                    regras = regras_semanticas['operadores_relacionais'].get(simbolo, None)
+
+                    if tipo1 not in regras['aceita'] or tipo2 not in regras['aceita']:
+                        erros_semanticos.append(f"Linha {numero_linha}: Operador '{simbolo}' requer operandos do tipo 'int' ou 'real'.")
+
+                    tipo_resultado = regras['retorna']
+                    pilha_tipos.append(tipo_resultado)
+                    pilha_valores.append(None)  # valor desconhecido
+
+                    arvore_abstrata.append({
+                        'tipo': tipo_resultado,
+                        'operador': simbolo,
+                        'operandos': [tipo1, tipo2],
+                        'linha': numero_linha
+                    })
+                
+                elif simbolo == 'if':
+                    if len(pilha_tipos) < 1:
+                        erros_semanticos.append(f"Linha {numero_linha}: Comando IF requer uma condição.")
+                        continue
+
+                    tipo_condicao = pilha_tipos.pop()
+                    pilha_valores.pop()
+
+                    if tipo_condicao != 'booleano':
+                        erros_semanticos.append(f"Linha {numero_linha}: Condição do IF deve ser do tipo 'booleano', mas recebeu '{tipo_condicao}'.")
+
+                    tipo_resultado = promoverTipo(*pilha_tipos) if pilha_tipos else 'desconhecido'
+                    pilha_tipos.append(tipo_resultado)
+                    pilha_valores.append(None)  # valor desconhecido
+
+                    arvore_abstrata.append({
+                        'tipo': tipo_resultado,
+                        'comando': 'if',
+                        'condicao': tipo_condicao,
+                        'linha': numero_linha
+                    })
+                
+                elif simbolo == 'while':
+                    if len(pilha_tipos) < 1:
+                        erros_semanticos.append(f"Linha {numero_linha}: Comando WHILE requer uma condição.")
+                        continue
+
+                    tipo_condicao = pilha_tipos.pop()
+                    pilha_valores.pop()
+
+                    if tipo_condicao != 'booleano':
+                        erros_semanticos.append(f"Linha {numero_linha}: Condição do WHILE deve ser do tipo 'booleano', mas recebeu '{tipo_condicao}'.")
+
+                    tipo_resultado = promoverTipo(*pilha_tipos) if pilha_tipos else 'desconhecido'
+                    pilha_tipos.append(tipo_resultado)
+                    pilha_valores.append(None)  # valor desconhecido
+
+                    arvore_abstrata.append({
+                        'tipo': tipo_resultado,
+                        'comando': 'while',
+                        'condicao': tipo_condicao,
+                        'linha': numero_linha
+                    })
+    tipo_final = pilha_tipos.pop() if pilha_tipos else 'desconhecido'
+    return tabela_simbolos, erros_semanticos, arvore_abstrata, tipo_final
+
