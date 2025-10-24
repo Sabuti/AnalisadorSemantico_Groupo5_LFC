@@ -662,3 +662,44 @@ def analisadorSemantico(derivacao, tokens_valores, tabela_simbolos, regras_seman
     tipo_final = pilha_tipos.pop() if pilha_tipos else 'desconhecido'
     return tabela_simbolos, erros_semanticos, arvore_abstrata, tipo_final
 
+
+            
+
+def analisadorSemanticoMemoria(tabela_simbolos, memoria):
+    """
+    Analisador semântico focado na memória.
+    Retorna: memoria_atualizada, erros_semanticos
+    """
+    erros_semanticos = []
+    for nome, info in tabela_simbolos.items():
+        if not info['inicializada']:
+            erros_semanticos.append(f"Linha {info['linha']}: Identificador '{nome}' declarado mas não inicializado.")
+        else:
+            memoria = adicionarMemoria(memoria, nome, info['tipo'], True)
+    return memoria, erros_semanticos
+
+def analisadorSemanticaControle(arvore_abstrata, numero_linha):
+    #valida estruturas de controle (if, while)
+    
+    erros_semanticos = []
+    for nodo in arvore_abstrata:
+         if 'comando' in nodo:
+              comando = nodo['comando']
+              if comando == 'if' or comando == 'while':
+                tipo_condicao = nodo['condicao']
+                if tipo_condicao != 'booleano':
+                     erros_semanticos.append(f"Linha {numero_linha}: Condição do {comando.upper()} deve ser do tipo 'booleano', mas recebeu '{tipo_condicao}'.")
+    return erros_semanticos
+        
+def gerarArvoreAtribuida(arvore_anotada, tipo_final, numero_linha):
+    """
+    Constrói a árvore sintática abstrata atribuída final
+    """
+    arvore_atribuida = {
+        'tipo_no': 'PROGRAMA',
+        'tipo_inferido': tipo_final,
+        'linha': numero_linha,
+        'filhos': arvore_anotada
+    }
+    
+    return arvore_atribuida
