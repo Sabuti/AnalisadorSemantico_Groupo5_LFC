@@ -872,3 +872,134 @@ def gerarDocJulgamentoTipos(arvore_anotada, tipo_final, numero_linha, nome_arqui
                 doc.write(f"- Regra aplicada: Comando RES (referência a resultado anterior)\n")
             
             doc.write(f"- Linha: {no['linha']}\n\n")
+
+
+
+# -------------------------
+# Geração de Documentação - Julgamento de Tipos
+def gerarDocJulgamentoTipos(arvore_anotada, tipo_final, numero_linha, nome_arquivo):
+    """Gera arquivo markdown com o julgamento de tipos"""
+    with open(f"julgamento_tipos_{nome_arquivo}.md", "w", encoding="utf-8") as doc:
+        doc.write("# Julgamento de Tipos\n\n")
+        doc.write(f"## Linha {numero_linha}\n\n")
+        doc.write(f"**Tipo Final da Expressão:** `{tipo_final}`\n\n")
+        
+        doc.write("### Derivação de Tipos (passo a passo):\n\n")
+        
+        for i, no in enumerate(arvore_anotada, 1):
+            doc.write(f"**Passo {i}:** {no['tipo_no']}\n")
+            doc.write(f"- Tipo inferido: `{no['tipo_inferido']}`\n")
+            
+            if no['tipo_no'] == 'LITERAL':
+                doc.write(f"- Valor: `{no['valor']}`\n")
+                doc.write(f"- Regra aplicada: Literal {no['tipo_inferido']}\n")
+            
+            elif no['tipo_no'] == 'IDENT':
+                doc.write(f"- Nome: `{no['nome']}`\n")
+                doc.write(f"- Regra aplicada: Leitura de variável\n")
+            
+            elif no['tipo_no'] == 'ATRIBUICAO':
+                doc.write(f"- Nome: `{no['nome']}`\n")
+                doc.write(f"- Valor: `{no.get('valor', 'N/A')}`\n")
+                doc.write(f"- Regra aplicada: Declaração/Atribuição de variável\n")
+            
+            elif no['tipo_no'] == 'OPERACAO':
+                doc.write(f"- Operador: `{no['operador']}`\n")
+                doc.write(f"- Operandos: `{no['operandos'][0]}`, `{no['operandos'][1]}`\n")
+                doc.write(f"- Regra aplicada: Operação aritmética ")
+                if no['operador'] == '|':
+                    doc.write("(divisão real → real)\n")
+                elif no['operador'] in ['/', '%']:
+                    doc.write("(operação inteira → int)\n")
+                elif no['operador'] == '^':
+                    doc.write("(potência, expoente int)\n")
+                else:
+                    doc.write("(promoção de tipos)\n")
+            
+            elif no['tipo_no'] == 'COMPARACAO':
+                doc.write(f"- Operador: `{no['operador']}`\n")
+                doc.write(f"- Operandos: `{no['operandos'][0]}`, `{no['operandos'][1]}`\n")
+                doc.write(f"- Regra aplicada: Comparação → booleano\n")
+            
+            elif no['tipo_no'] == 'CONDICIONAL_IF':
+                doc.write(f"- Tipo condição: `{no['tipo_condicao']}`\n")
+                doc.write(f"- Tipos dos ramos: `{no['tipos_ramos'][0]}`, `{no['tipos_ramos'][1]}`\n")
+                doc.write(f"- Regra aplicada: Estrutura condicional IF\n")
+            
+            elif no['tipo_no'] == 'LOOP_WHILE':
+                doc.write(f"- Tipo condição: `{no['tipo_condicao']}`\n")
+                doc.write(f"- Tipo corpo: `{no['tipo_corpo']}`\n")
+                doc.write(f"- Regra aplicada: Laço WHILE\n")
+            
+            elif no['tipo_no'] == 'RES':
+                doc.write(f"- Parâmetro: `{no['parametro']}`\n")
+                doc.write(f"- Regra aplicada: Comando RES (referência a resultado anterior)\n")
+            
+            doc.write(f"- Linha: {no['linha']}\n\n")
+
+# -------------------------
+# Geração de Documentação - Erros Semânticos
+def gerarDocErrosSemanticos(todos_erros, nome_arquivo):
+    """Gera arquivo markdown com erros semânticos"""
+    with open(f"erros_semanticos_{nome_arquivo}.md", "w", encoding="utf-8") as doc:
+        doc.write("# Erros Semânticos Detectados\n\n")
+        
+        if not todos_erros:
+            doc.write("✅ **Nenhum erro semântico encontrado.**\n\n")
+            doc.write("O programa está semanticamente correto:\n")
+            doc.write("- Todos os tipos são compatíveis\n")
+            doc.write("- Todas as variáveis foram inicializadas antes do uso\n")
+            doc.write("- Todas as estruturas de controle estão corretas\n")
+        else:
+            doc.write(f"**Erros encontrados:** {len(todos_erros)}\n\n")
+            doc.write("---\n\n")
+            
+            for i, erro in enumerate(todos_erros, 1):
+                doc.write(f"## Erro {i}\n\n")
+                doc.write(f"```\n{erro}\n```\n\n")
+
+# -------------------------
+# Geração de Documentação - Árvore Atribuída
+def gerarDocArvoreAtribuida(arvore_atribuida, nome_arquivo):
+    """Gera arquivo markdown com a árvore sintática abstrata atribuída"""
+    with open(f"arvore_atribuida_{nome_arquivo}.md", "w", encoding="utf-8") as doc:
+        doc.write("# Árvore Sintática Abstrata Atribuída\n\n")
+        doc.write("## Visualização em Texto\n\n")
+        doc.write("```\n")
+        doc.write(f"PROGRAMA (tipo: {arvore_atribuida['tipo_inferido']})\n")
+        doc.write(f"└─ Linha {arvore_atribuida['linha']}\n")
+        
+        for i, no in enumerate(arvore_atribuida['filhos']):
+            prefixo = "   ├─" if i < len(arvore_atribuida['filhos']) - 1 else "   └─"
+            doc.write(f"{prefixo} {no['tipo_no']} (tipo: {no['tipo_inferido']})\n")
+        
+        doc.write("```\n\n")
+        
+        doc.write("## Estrutura Detalhada (JSON)\n\n")
+        doc.write("```json\n")
+        doc.write(json.dumps(arvore_atribuida, indent=2, ensure_ascii=False))
+        doc.write("\n```\n\n")
+    
+    # Também salva em JSON puro
+    with open(f"arvore_atribuida_{nome_arquivo}.json", "w", encoding="utf-8") as json_file:
+        json.dump(arvore_atribuida, json_file, indent=2, ensure_ascii=False)
+
+# -------------------------
+# Geração de Documentação - Tabela de Símbolos
+def gerarDocTabelaSimbolos(tabela_simbolos, nome_arquivo):
+    """Gera arquivo markdown com a tabela de símbolos"""
+    with open(f"tabela_simbolos_{nome_arquivo}.md", "w", encoding="utf-8") as doc:
+        doc.write("# Tabela de Símbolos\n\n")
+        
+        if not tabela_simbolos:
+            doc.write("*Tabela vazia - nenhuma variável declarada*\n\n")
+        else:
+            doc.write("| Símbolo | Tipo | Inicializada | Valor | Linha | Usada |\n")
+            doc.write("|---------|------|--------------|-------|-------|-------|\n")
+            
+            for simbolo, info in sorted(tabela_simbolos.items()):
+                valor = str(info['valor']) if info['valor'] is not None else "N/A"
+                doc.write(f"| {simbolo} | {info['tipo']} | {'Sim' if info['inicializada'] else 'Não'} | ")
+                doc.write(f"{valor} | {info['linha']} | {'Sim' if info['usada'] else 'Não'} |\n")
+            
+            doc.write(f"\n**Total de símbolos:** {len(tabela_simbolos)}\n")
