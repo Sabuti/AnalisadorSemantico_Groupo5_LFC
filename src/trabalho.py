@@ -235,10 +235,6 @@ def adicionarMemoria(memoria, nome, tipo='desconhecido', inicializada=False):
     }
     return memoria
 
-
-
-
-
 # --------------------------
 # Analisador sintático: constrói a gramática, tabela LL(1)
 def construirGramatica():
@@ -703,3 +699,115 @@ def gerarArvoreAtribuida(arvore_anotada, tipo_final, numero_linha):
     }
     
     return arvore_atribuida
+
+# Geração de Documentação - Gramática de Atributos
+def gerarDocGramaticaAtributos(nome_arquivo):
+    """Gera arquivo markdown com a gramática de atributos"""
+    with open(f"gramatica_atributos_{nome_arquivo}.md", "w", encoding="utf-8") as doc:
+        doc.write("# Gramática de Atributos\n\n")
+        doc.write("## 1. Tipos de Dados\n\n")
+        doc.write("A linguagem suporta três tipos:\n")
+        doc.write("- `int`: Números inteiros\n")
+        doc.write("- `real` (ou `float`): Números de ponto flutuante\n")
+        doc.write("- `booleano`: Resultado de operações relacionais\n\n")
+        
+        doc.write("## 2. Atributos\n\n")
+        doc.write("### Atributos Sintetizados (propagam de baixo para cima):\n")
+        doc.write("- `tipo`: O tipo da expressão (int, real, booleano)\n")
+        doc.write("- `valor`: O valor calculado da expressão\n\n")
+        
+        doc.write("### Atributos Herdados (propagam de cima para baixo):\n")
+        doc.write("- `escopo`: Nível de escopo da variável\n")
+        doc.write("- `inicializada`: Para memórias, indica se foram inicializadas\n\n")
+        
+        doc.write("## 3. Regras de Produção com Atributos\n\n")
+        
+        doc.write("### 3.1. Operadores Aritméticos\n\n")
+        doc.write("#### Adição de Inteiros\n")
+        doc.write("```\n")
+        doc.write("Γ ⊢ e₁ : int    Γ ⊢ e₂ : int\n")
+        doc.write("─────────────────────────────\n")
+        doc.write("    Γ ⊢ (e₁ e₂ +) : int\n")
+        doc.write("```\n\n")
+        
+        doc.write("#### Adição com Promoção de Tipo\n")
+        doc.write("```\n")
+        doc.write("Γ ⊢ e₁ : T₁    Γ ⊢ e₂ : T₂\n")
+        doc.write("─────────────────────────────────────\n")
+        doc.write("Γ ⊢ (e₁ e₂ +) : promover_tipo(T₁, T₂)\n")
+        doc.write("```\n\n")
+        
+        doc.write("#### Divisão Real\n")
+        doc.write("```\n")
+        doc.write("Γ ⊢ e₁ : T₁    Γ ⊢ e₂ : T₂    T₁,T₂ ∈ {int, real}\n")
+        doc.write("────────────────────────────────────────────────\n")
+        doc.write("              Γ ⊢ (e₁ e₂ |) : real\n")
+        doc.write("```\n\n")
+        
+        doc.write("#### Divisão Inteira e Módulo\n")
+        doc.write("```\n")
+        doc.write("Γ ⊢ e₁ : int    Γ ⊢ e₂ : int\n")
+        doc.write("─────────────────────────────\n")
+        doc.write("   Γ ⊢ (e₁ e₂ /) : int\n")
+        doc.write("   Γ ⊢ (e₁ e₂ %) : int\n")
+        doc.write("```\n\n")
+        
+        doc.write("#### Potenciação\n")
+        doc.write("```\n")
+        doc.write("Γ ⊢ e₁ : T₁    Γ ⊢ e₂ : int    T₁ ∈ {int, real}\n")
+        doc.write("───────────────────────────────────────────────\n")
+        doc.write("           Γ ⊢ (e₁ e₂ ^) : T₁\n")
+        doc.write("```\n\n")
+        
+        doc.write("### 3.2. Operadores Relacionais\n\n")
+        doc.write("```\n")
+        doc.write("Γ ⊢ e₁ : T₁    Γ ⊢ e₂ : T₂    T₁,T₂ ∈ {int, real}\n")
+        doc.write("────────────────────────────────────────────────\n")
+        doc.write("        Γ ⊢ (e₁ e₂ op) : booleano\n")
+        doc.write("```\n")
+        doc.write("onde `op ∈ {<, >, <=, >=, ==, !=}`\n\n")
+        
+        doc.write("### 3.3. Estruturas de Controle\n\n")
+        doc.write("#### Condicional IF\n")
+        doc.write("```\n")
+        doc.write("Γ ⊢ e₁ : booleano    Γ ⊢ e₂ : T    Γ ⊢ e₃ : T\n")
+        doc.write("────────────────────────────────────────────────\n")
+        doc.write("        Γ ⊢ (e₁ e₂ e₃ IF) : T\n")
+        doc.write("```\n\n")
+        
+        doc.write("#### Laço WHILE\n")
+        doc.write("```\n")
+        doc.write("Γ ⊢ e₁ : booleano    Γ ⊢ e₂ : T\n")
+        doc.write("───────────────────────────────\n")
+        doc.write("    Γ ⊢ (e₁ e₂ WHILE) : T\n")
+        doc.write("```\n\n")
+        
+        doc.write("### 3.4. Comandos Especiais\n\n")
+        doc.write("#### Declaração de Variável (MEM)\n")
+        doc.write("```\n")
+        doc.write("Γ ⊢ e : T    Γ[x ↦ T] ⊢ x inicializada\n")
+        doc.write("────────────────────────────────────────\n")
+        doc.write("        Γ ⊢ (e x) : T\n")
+        doc.write("```\n\n")
+        
+        doc.write("#### Leitura de Variável\n")
+        doc.write("```\n")
+        doc.write("Γ(x) = T    x inicializada\n")
+        doc.write("───────────────────────────\n")
+        doc.write("      Γ ⊢ (x) : T\n")
+        doc.write("```\n\n")
+        
+        doc.write("#### Comando RES\n")
+        doc.write("```\n")
+        doc.write("Γ ⊢ n : int    n ≥ 0    resultado[n] : T\n")
+        doc.write("───────────────────────────────────────────\n")
+        doc.write("           Γ ⊢ (n RES) : T\n")
+        doc.write("```\n\n")
+        
+        doc.write("## 4. Função de Promoção de Tipos\n\n")
+        doc.write("```\n")
+        doc.write("promover_tipo(int, int) = int\n")
+        doc.write("promover_tipo(int, real) = real\n")
+        doc.write("promover_tipo(real, int) = real\n")
+        doc.write("promover_tipo(real, real) = real\n")
+        doc.write("```\n\n")
