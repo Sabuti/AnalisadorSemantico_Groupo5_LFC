@@ -15,6 +15,7 @@
 # Não precisa gerar código Assembly
 
 import sys # import para gerenciar argumentos de linha de comando
+import json
 
 EPS = 'E' # símbolo para epsilon / vazio
 
@@ -37,7 +38,7 @@ def lerArquivo(nomeArquivo, linhas):
 
 # -------------------------
 # Função para separar tokens em uma linha
-def parseExpressao(linha, _tokens_):
+def parseExpressao(linha, _tokens_): ## revisar erro daqui
     token = ""
     parenteses = 0
     i = 0
@@ -57,12 +58,19 @@ def parseExpressao(linha, _tokens_):
             else:
                 parenteses -= 1
                 if parenteses < 0:
-                    raise ValueError("Erro: parêntese fechado sem correspondente.")
+                    raise ValueError("Erro Sintático: parêntese fechado sem correspondente.")
         elif char in "+-*/%^":  # operadores
             if token:
                 _tokens_.append(token)
                 token = ""
             _tokens_.append(char)
+
+        elif char == '|':  # operador raiz quadrada
+            if token:
+                _tokens_.append(token)
+                token = ""
+            _tokens_.append(char)
+
         elif char in "><=!":
             if token:
                 _tokens_.append(token)
@@ -82,7 +90,7 @@ def parseExpressao(linha, _tokens_):
     if token:
         _tokens_.append(token)
     if parenteses != 0:
-        raise ValueError("Erro: parênteses desbalanceados.")
+        raise ValueError("Erro Sintático: parêntese aberto sem correspondente.")
     return True
 
 #funções de estado para o analisador léxico
@@ -92,7 +100,6 @@ def estadoNumero(token):
     try:
         if token.count(".") > 1: # Checa se há mais de um ponto decimal
             return False
-        float(token)
         return True
     except ValueError:
         return False
@@ -113,7 +120,7 @@ def estadoParenteses(token):
         
 def estadoComparador(token):
     match token:
-        case "<" | ">" | "<=" | ">=" | "==" | "!=": 
+        case "<" | ">" | "<=" | ">=" | "==" | "!=" | "<>": 
             return True
         case _:
             return False
@@ -139,148 +146,85 @@ def RESorMEM(token):
                 else:
                     return False
 
-    if token in {"RES", "MEM", "IF", "WHILE"}:
         return True
-    return True
 
 # -------------------------
 # Analisador léxico: valida CADA token isoladamente
 def analisadorLexico(tokens):
     tokens_convertidos = []
+    tokens_valores = []
 
     for token in tokens:
         if estadoParenteses(token):
             tokens_convertidos.append(token)
+            tokens_valores.append(token)
             continue
         if estadoOperador(token):
             tokens_convertidos.append(token)
+            tokens_valores.append(token)
             continue
         if estadoNumero(token):
-            tokens_convertidos.append("real")  # converte número para token 'real'
+            if token.count(".") == 1:
+                token = float(token)
+                tokens_convertidos.append("float")
+                tokens_valores.append(float(token))
+            else:
+                token = int(token)
+                tokens_convertidos.append("int")
+                tokens_valores.append(int(token))
             continue
         if estadoComparador(token):
             tokens_convertidos.append(token)
+            tokens_valores.append(token)
             continue
         if RESorMEM(token):
             if token == "RES":
                 tokens_convertidos.append("res")  # converte comando RES para token 'res'
+                tokens_valores.append(token)
             elif token == "IF":
                 tokens_convertidos.append("if") # converte comando IF para token 'if'
+                tokens_valores.append(token)
             elif token == "WHILE":
                 tokens_convertidos.append("while") # converte comando WHILE para token 'while'
+                tokens_valores.append(token)
             else:
                 tokens_convertidos.append("ident")  # converte outros identificadores para token 'ident'
+                tokens_valores.append(token)
             continue
 
         # Se não passou em nada, é inválido
         raise ValueError(f"Erro léxico: token inválido -> {token}")
 
-    return tokens_convertidos
+    return tokens_convertidos, tokens_valores
 
-def analisadorSemantico(derivacao, memoria, historico_resultados):
-    """
-    Executa a análise semântica sobre a derivação gerada pelo analisador sintático.
-    Retorna: memoria_atualizada, erros_semanticos, arvore_abstrata
-    """
-    erros_semanticos = []
-    arvore_abstrata = []
-    contador_mem = 1
+def inicializarTabelaSimbolos():
+    """Inicializa a tabela de símbolos vazia"""
+    return {}
 
-    for nao_terminal, producao in derivacao:
-        if not producao:
-            continue
+def adicionarSimbolo(tabela, nome, tipo='desconhecido', inicializada=False, valor=None, linha = 0):
+    """Adiciona um símbolo à tabela de símbolos"""
+    tabela[nome] = {
+        'tipo': tipo,
+        'inicializada': inicializada,
+        'valor': valor,
+        'linha': linha,
+        'usada': False
+    }
+    return tabela
 
-        # Atribuição simulada: (real ident)
-        if len(producao) >= 2 and producao[0] == 'real' and producao[1] == 'ident':
-            nome = producao[1]
-            contador_mem += 1
-            memoria = adicionarMemoria(memoria, nome, tipo='real', inicializada=True)
-            arvore_abstrata.append(('ATRIB', nome, producao[0]))
+def buscarSimbolo(tabela, nome):
+    """Busca um símbolo na tabela de símbolos"""
+    return tabela.get(nome, None)
 
-        # Operação aritmética
-        elif any(op in producao for op in ['+', '-', '*', '/', '%', '^']):
-            arvore_abstrata.append(('OPERACAO', producao))
-            if producao.count('real') + producao.count('ident') < 2:
-                erros_semanticos.append("Erro: operador aritmético com operandos insuficientes.")
-
-        # Comparação
-        elif any(op in producao for op in ['<', '>', '<=', '>=', '==', '!=']):
-            arvore_abstrata.append(('COMPARACAO', producao))
-            if producao.count('real') + producao.count('ident') < 2:
-                erros_semanticos.append("Erro: operador de comparação sem dois operandos.")
-
-        # Estruturas de controle
-        elif 'if' in producao:
-            arvore_abstrata.append(('CONDICAO_IF', producao))
-            if not any(op in producao for op in ['<', '>', '==', '<=', '>=', '!=']):
-                erros_semanticos.append("Erro: IF sem condição de comparação.")
-
-        elif 'while' in producao:
-            arvore_abstrata.append(('LOOP_WHILE', producao))
-            if not any(op in producao for op in ['<', '>', '==', '<=', '>=', '!=']):
-                erros_semanticos.append("Erro: WHILE sem condição de comparação.")
-
-        # Variáveis MEM
-        elif 'ident' in producao:
-            nome = producao[0]
-            contador_mem += 1
-            if nome.startswith("MEM"):
-                if nome not in memoria:
-                    erros_semanticos.append(f"Erro: variável '{nome}' usada sem declaração prévia.")
-                    memoria = adicionarMemoria(memoria, nome, tipo='real', inicializada=False)
-            arvore_abstrata.append(('IDENT', nome))
-        
-        elif 'res' in producao:
-            if 'RES' not in memoria:
-                memoria = adicionarMemoria(memoria, 'RES', tipo='real', inicializada=False)
-            arvore_abstrata.append(('IDENT', 'RES'))
-
-    # Atualizar RES
-    if historico_resultados:
-        memoria = adicionarMemoria(memoria, 'RES', tipo='real', inicializada=True)
-        memoria['RES']['valor'] = historico_resultados[-1]
-
-    # Validação geral
-    if not memoria:
-        erros_semanticos.append("Aviso: nenhuma variável MEM ou RES declarada.")
-
-    return memoria, erros_semanticos, arvore_abstrata
-
-
-def validarRPN(tokens, memoria, erros):
-    erros = []
-    pilha = []
-    
-    # Extrai tokens da derivação para validar RPN
-    tokens = []
-    for _, producao in derivacao:
-        if producao and producao[0] not in ['(', ')']:  # Ignora parênteses
-            tokens.extend(producao)
-    
-    # Simula avaliação RPN
-    for token in tokens:
-        if token in ['real', 'ident']:
-            pilha.append('operando')
-        elif token in ['+', '-', '*', '/', '%', '^', '|', '<', '>', '<=', '>=', '==', '!=', 'res']:
-            if len(pilha) < 2:
-                erros.append(f"Erro RPN: Operador '{token}' sem operandos suficientes")
-                return False, erros
-            pilha.pop()  # Remove operando 2
-            pilha.pop()  # Remove operando 1
-            pilha.append('resultado')  # Adiciona resultado
-    
-    # No final deve sobrar exatamente um resultado
-    if len(pilha) != 1:
-        erros.append("Erro RPN: Expressão mal formada")
-        return False, erros
-    
-    return True, erros
 
 
 def inicializarMemoria():
     """Inicializa a memória vazia"""
     return {}
 
+def buscarSimbolo(tabela, nome):
+    """Busca um símbolo na tabela de símbolos"""
+    return tabela.get(nome, None)
 
 def adicionarMemoria(memoria, nome, tipo='desconhecido', inicializada=False):
     """Adiciona um item à memória"""
@@ -291,65 +235,8 @@ def adicionarMemoria(memoria, nome, tipo='desconhecido', inicializada=False):
     }
     return memoria
 
-def gerarDocumentacaoSemantica(memoria, todos_erros, nome_arquivo):
-    """Gera documentação da análise semântica"""
-    nome_base = nome_arquivo.split('.')[0]
-    with open(f"semantico_{nome_base}.txt", "w", encoding="utf-8") as doc:
-        doc.write("=== ANÁLISE SEMÂNTICA ===\n\n")
-        doc.write("MEMÓRIA (Tabela de Símbolos):\n")
-        doc.write("-" * 50 + "\n")
-        if memoria:
-            for simbolo, info in memoria.items():
-                doc.write(f"{simbolo}: {info}\n")
-        else:
-            doc.write("Memória vazia\n")
-        doc.write("\nERROS SEMÂNTICOS ENCONTRADOS:\n")
-        doc.write("-" * 50 + "\n")
-        if todos_erros:
-            for i, erro in enumerate(todos_erros, 1):
-                doc.write(f"{i:2d}. {erro}\n")
-        else:
-            doc.write("Nenhum erro semântico encontrado.\n")
-        doc.write(f"\nRESUMO:\n")
-        doc.write(f"- Total de itens na memória: {len(memoria)}\n")
-        doc.write(f"- Total de erros: {len(todos_erros)}\n")
 
 
-# --------------------------
-
-# Analisador sintático: constrói a gramática, tabela LL(1)
-def processarResultadoExpressao(derivacao, memoria, historico_resultados):
-    """ 
-    Processa uma expressão regular e calcula seu resultado 
-    Retorna o resultado (simulado) e atualiza o histórico 
-    """
-    # Simula o cálculo do resultado (implementação simplificada)
-    resultado_simulado = 0.0
-    # Lógica simplificada para calcular resultado
-    for _, producao in derivacao:
-        if producao and 'real' in producao:
-            resultado_simulado += 1.0  # soma simulada
-
-    
-    # Adiciona ao histórico
-    historico_resultados.append(resultado_simulado)
-    # Atualiza RES com o último resultado
-    memoria = adicionarMemoria(memoria, 'RES', 'numero', True)
-    memoria['RES']['valor'] = resultado_simulado
-    return memoria, historico_resultados, resultado_simulado
-
-
-def identificarTipoLinha(derivacao):
-    """ Identifica se a linha é uma expressão, atribuição ou consulta """
-    for nao_terminal, producao in derivacao:
-        if nao_terminal == 'ATRIBUICAO_MEM':
-            return 'atribuicao_mem'
-        elif nao_terminal == 'CONSULTA_RES':
-            return 'consulta_res'
-        elif nao_terminal == 'EXPR':
-            return 'expressao'
-    
-    return 'desconhecido'
 
 
 # --------------------------
@@ -459,7 +346,7 @@ def construirGramatica():
     G['EXPR']  = [['(', 'ITEMS', ')']]
     G['ITEMS'] = [['ITEM', 'ITEMS'], [EPS]]
     G['ITEM'] = [['NUMERO'], ['IDENT'], ['OPERADOR'], ['IFKW'], ['WHILEKW'], ['EXPR']]
-    G['NUMERO'] = [['real']]    # token lexical 'real'
+    G['NUMERO'] = [['float'], ['int']]    # token lexical 'float' ou 'int'
     G['IDENT']  = [['ident']]   # token lexical 'ident' (men/MEM/RES etc.)
     G['OPERADOR'] = [['+'], ['-'], ['*'], ['/'], ['%'], ['^'], ['|'], ['>'], ['<'], ['>='], ['<='], ['=='], ['!='], ['res']] 
     G['IFKW'] = [['if']]        # será token 'if'
@@ -478,9 +365,56 @@ def construirGramatica():
         print("Gramática é LL(1).")
         return G, FIRST, FOLLOW, tabelaLL1
 
+# Definição da Gramática de Atributos
+def definirGramaticaAtributos():
+    """
+    Define a gramática de atributos da linguagem.
+    Retorna as regras semânticas para verificação de tipos.
+    """
+    regras_semanticas = {
+        'operadores_aritmeticos': {
+            '+': {'aceita': ['int', 'real'], 'retorna': 'promover'},
+            '-': {'aceita': ['int', 'real'], 'retorna': 'promover'},
+            '*': {'aceita': ['int', 'real'], 'retorna': 'promover'},
+            '|': {'aceita': ['int', 'real'], 'retorna': 'real'},  # Divisão real sempre retorna real
+            '/': {'aceita': ['int'], 'retorna': 'int'},  # Divisão inteira
+            '%': {'aceita': ['int'], 'retorna': 'int'},  # Módulo
+            '^': {'aceita_base': ['int', 'real'], 'aceita_exp': ['int'], 'retorna': 'promover'}
+        },
+        'operadores_relacionais': {
+            '<': {'aceita': ['int', 'real'], 'retorna': 'booleano'},
+            '>': {'aceita': ['int', 'real'], 'retorna': 'booleano'},
+            '<=': {'aceita': ['int', 'real'], 'retorna': 'booleano'},
+            '>=': {'aceita': ['int', 'real'], 'retorna': 'booleano'},
+            '==': {'aceita': ['int', 'real'], 'retorna': 'booleano'},
+            '!=': {'aceita': ['int', 'real'], 'retorna': 'booleano'},
+            '<>': {'aceita': ['int', 'real'], 'retorna': 'booleano'}
+        },
+        'estruturas_controle': {
+            'if': {'condicao': 'booleano', 'retorna': 'tipo_ramos'},
+            'while': {'condicao': 'booleano', 'retorna': 'tipo_corpo'}
+        },
+        'comandos_especiais': {
+            'res': {'parametro': 'int', 'retorna': 'tipo_resultado'},
+            'mem_atrib': {'valor': ['int', 'real'], 'retorna': 'tipo_valor'},
+            'mem_leitura': {'retorna': 'tipo_memoria'}
+        }
+    }
+    
+    return regras_semanticas
+
+def promoverTipo(tipo1, tipo2):
+    """Promoção de tipos: se um é real, o resultado é real"""
+    if tipo1 == 'real' or tipo2 == 'real':
+        return 'real'
+    if tipo1 == 'int' and tipo2 == 'int':
+        return 'int'
+    if tipo1 == 'booleano' or tipo2 == 'booleano':
+        return 'booleano'
+    return 'desconhecido'
 # --------------------------
 # Analisador sintático: processa tokens usando a tabela LL(1)
-def parsear(tokens, tabelaLL1): # entrada: vetor de tokens, tabelaLL1
+def analisadorSintatico(tokens, tabelaLL1): # entrada: vetor de tokens, tabelaLL1
     stack = ['$', 'LINHA'] # pilha inicial com símbolo de início e marcador de fim
     derivation = [] # para armazenar a sequência de derivações
     index = 0 # índice para rastrear a posição atual nos tokens   
@@ -503,7 +437,7 @@ def parsear(tokens, tabelaLL1): # entrada: vetor de tokens, tabelaLL1
             if top == current_token: # se coincidem, consome o token
                 index += 1
             else:
-                raise ValueError(f"Erro de sintaxe: esperado '{top}', encontrado '{current_token}'")
+                raise ValueError(f"Erro Sintático: esperado '{top}', encontrado '{current_token}'")
         else: # topo é um não-terminal
             key = (top, current_token)
             if key in tabelaLL1:
@@ -513,40 +447,371 @@ def parsear(tokens, tabelaLL1): # entrada: vetor de tokens, tabelaLL1
                     if sym != EPS: # não empilha epsilon
                         stack.append(sym)
             else:
-                raise ValueError(f"Erro de sintaxe: não há produção para {top}, '{current_token}'")
-    raise ValueError("Erro de sintaxe: pilha vazia antes do fim dos tokens")
+                raise ValueError(f"Erro Sintático: não há produção para {top}, '{current_token}'")
+    raise ValueError("Erro Sintático: pilha vazia antes do fim dos tokens")
 
-# --------------------------
-# Programa principal
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Uso: python script.py <nome_do_arquivo>")
-    else:
-        caminho = sys.argv[1]
-        linhas = []
-        memoria = {}
-        resultados = []
-        G, FIRST, FOLLOW, tabelaLL1 = construirGramatica()
-        lerArquivo(caminho, linhas)
-        with open(caminho, "r", encoding="utf-8") as f:
-            for numero_linha, linha in enumerate(f, start=1):
-                linha = linha.strip()
-                if not linha:
-                    continue
-                tokens = []
-                try:
-                    # do trabalho 1
-                    parseExpressao(linha, tokens)
-                    tokens = analisadorLexico(tokens)
-                    # do trabalho 2
-                    derivation = parsear(tokens, tabelaLL1)
-                    # pro trabalho 3: analisar semanticamente a derivação
-                    #analisadorSemantico(derivation)
-                    memoria, erros_semanticos, arvore_abstrata = analisadorSemantico(derivation, memoria, resultados)
-                    gerarDocumentacaoSemantica(memoria, erros_semanticos, f"{caminho}_linha{numero_linha}")
-                    # pra depurar
-                    print(f"Linha válida: {linha}")
-                    print(f"Tokens: {tokens}")
-                    #print(f"Derivações: {derivation}\n")
-                except ValueError as e:
-                    print(e)
+def analisadorSemantico(derivacao, tokens_valores, tabela_simbolos, regras_semanticas, historico_resultados, numero_linha):
+    """
+    Executa a análise semântica sobre a derivação gerada pelo analisador sintático.
+    Retorna: memoria_atualizada, erros_semanticos, arvore_abstrata
+    """
+    erros_semanticos = []
+    arvore_abstrata = []
+    pilha_tipos = []
+    pilha_valores = []
+    indx = 1
+
+    for nao_terminal, producao in derivacao:
+        if not producao or producao == [EPS]:
+            continue
+        
+        for simbolo in producao:
+            if simbolo == 'int':
+                tipo = 'int'
+                valor = tokens_valores[indx]
+                indx += 1
+                pilha_tipos.append(tipo)
+                pilha_valores.append(valor)
+                arvore_abstrata.append({
+                    'tipo': tipo,
+                    'valor': valor,
+                    'linha': numero_linha
+                })
+            if simbolo == 'float':
+                tipo = 'float'
+                valor = tokens_valores[indx]
+                indx += 1
+                pilha_tipos.append(tipo)
+                pilha_valores.append(valor)
+                arvore_abstrata.append({
+                    'tipo': tipo,
+                    'valor': valor,
+                    'linha': numero_linha
+                })
+            elif simbolo == 'ident':
+                nome = tokens_valores[indx]
+                indx += 1
+                if len(pilha_tipos) > 0:
+                    tipo = pilha_tipos.pop()
+                    valor = pilha_valores[-1] if len(pilha_valores) > 0 else None
+                    tabela_simbolos = adicionarSimbolo(tabela_simbolos, nome, tipo, True, valor, numero_linha)
+                    arvore_abstrata.append({
+                        'tipo': tipo,
+                        'nome': nome,
+                        'valor': valor,
+                        'linha': numero_linha
+                    })
+                else:
+                    info = buscarSimbolo(tabela_simbolos, nome)
+                    if info is None:
+                        erros_semanticos.append(f"Linha {numero_linha}: Uso de identificador não declarado '{nome}'.")
+                        tipo = 'desconhecido'
+                        valor = None
+                    elif not info['inicializada']:
+                        erros_semanticos.append(f"Linha {numero_linha}: Uso de identificador não inicializado '{nome}'.")
+                        tipo = info['tipo']
+                        valor = None
+                    else:
+                        tipo = info['tipo']
+                        valor = info['valor']
+                        tabela_simbolos[nome]['usada'] = True
+                    pilha_tipos.append(tipo)
+                    pilha_valores.append(valor)
+                    arvore_abstrata.append({
+                        'tipo': tipo,
+                        'nome': nome,
+                        'valor': valor,
+                        'linha': numero_linha
+                    })
+            elif simbolo == 'res':
+                if len(pilha_tipos) > 0:
+                    if pilha_tipos[-1] != 'int':
+                        erros_semanticos.append(f"Linha {numero_linha}: Comando RES espera um parâmetro do tipo 'int', mas recebeu '{pilha_tipos[-1]}'.")
+                    else:
+                        n = int(pilha_valores.pop())
+                        if n < 1 or n > len(historico_resultados):
+                            erros_semanticos.append(f"Linha {numero_linha}: Comando RES com índice fora do intervalo: {n}.")
+                            tipo = 'desconhecido'
+                        elif n >= len(historico_resultados):
+                            erros_semanticos.append(f"Linha {numero_linha}: Comando RES com índice igual ao tamanho do histórico: {n}.")
+                            tipo = 'desconhecido'
+                        else:
+                            indx = len(historico_resultados) - n
+                            tipo = historico_resultados[indx][tipo]
+
+                    pilha_tipos.pop()  # remove o tipo do parâmetro
+                    pilha_valores.pop()  # remove o valor do parâmetro
+                    pilha_tipos.append(tipo)
+                    pilha_valores.append(None)  # valor desconhecido
+
+                    arvore_abstrata.append({
+                        'tipo': tipo,
+                        'comando': 'res',
+                        'parametro': n,
+                        'linha': numero_linha
+                    })
+                
+                elif simbolo in {'+', '-', '*', '/', '%', '^', '|'}:
+                    if len(pilha_tipos) < 2:
+                        erros_semanticos.append(f"Linha {numero_linha}: Operador '{simbolo}' requer dois operandos.")
+                        continue
+
+                    tipo2 = pilha_tipos.pop()
+                    tipo1 = pilha_tipos.pop()
+                    pilha_valores.pop()
+                    pilha_valores.pop()
+                    regras = regras_semanticas['operadores_aritmeticos'].get(simbolo, None)
+
+                    if simbolo == '^':
+                        if tipo1 not in regras['aceita_base']:
+                            erros_semanticos.append(f"Linha {numero_linha}: Operador '{simbolo}' não aceita base do tipo '{tipo1}'.")
+                        if tipo2 not in regras['aceita_exp']:
+                            erros_semanticos.append(f"Linha {numero_linha}: Operador '{simbolo}' não aceita expoente do tipo '{tipo2}'.")
+                    elif simbolo in {'/', '%'}:
+                        if tipo1 != 'int' or tipo2 != 'int':
+                            erros_semanticos.append(f"Linha {numero_linha}: Operador '{simbolo}' requer operandos do tipo 'int'.")
+                        tipo_resultado = regras['retorna']
+                    
+                    elif simbolo == '|':
+                        if tipo1 not in regras['aceita'] or tipo2 not in regras['aceita']:
+                            erros_semanticos.append(f"Linha {numero_linha}: Operador '{simbolo}' requer operandos do tipo 'int' ou 'real'.")
+                        tipo_resultado = regras['retorna']
+                    else:
+                        if tipo1 not in regras['aceita'] or tipo2 not in regras['aceita']:
+                            erros_semanticos.append(f"Linha {numero_linha}: Operador '{simbolo}' requer operandos do tipo 'int' ou 'real'.")
+                        tipo_resultado = promoverTipo(tipo1, tipo2)
+
+                    pilha_tipos.append(tipo_resultado)
+                    pilha_valores.append(None)  # valor desconhecido
+
+                    arvore_abstrata.append({
+                        'tipo': tipo_resultado,
+                        'operador': simbolo,
+                        'operandos': [tipo1, tipo2],
+                        'linha': numero_linha
+                    })
+
+                elif simbolo in {'<', '>', '<=', '>=', '==', '!=', '<>'}:
+                    if len(pilha_tipos) < 2:
+                        erros_semanticos.append(f"Linha {numero_linha}: Operador '{simbolo}' requer dois operandos.")
+                        continue
+
+                    tipo2 = pilha_tipos.pop()
+                    tipo1 = pilha_tipos.pop()
+                    pilha_valores.pop()
+                    pilha_valores.pop()
+                    regras = regras_semanticas['operadores_relacionais'].get(simbolo, None)
+
+                    if tipo1 not in regras['aceita'] or tipo2 not in regras['aceita']:
+                        erros_semanticos.append(f"Linha {numero_linha}: Operador '{simbolo}' requer operandos do tipo 'int' ou 'real'.")
+
+                    tipo_resultado = regras['retorna']
+                    pilha_tipos.append(tipo_resultado)
+                    pilha_valores.append(None)  # valor desconhecido
+
+                    arvore_abstrata.append({
+                        'tipo': tipo_resultado,
+                        'operador': simbolo,
+                        'operandos': [tipo1, tipo2],
+                        'linha': numero_linha
+                    })
+                
+                elif simbolo == 'if':
+                    if len(pilha_tipos) < 1:
+                        erros_semanticos.append(f"Linha {numero_linha}: Comando IF requer uma condição.")
+                        continue
+
+                    tipo_condicao = pilha_tipos.pop()
+                    pilha_valores.pop()
+
+                    if tipo_condicao != 'booleano':
+                        erros_semanticos.append(f"Linha {numero_linha}: Condição do IF deve ser do tipo 'booleano', mas recebeu '{tipo_condicao}'.")
+
+                    tipo_resultado = promoverTipo(*pilha_tipos) if pilha_tipos else 'desconhecido'
+                    pilha_tipos.append(tipo_resultado)
+                    pilha_valores.append(None)  # valor desconhecido
+
+                    arvore_abstrata.append({
+                        'tipo': tipo_resultado,
+                        'comando': 'if',
+                        'condicao': tipo_condicao,
+                        'linha': numero_linha
+                    })
+                
+                elif simbolo == 'while':
+                    if len(pilha_tipos) < 1:
+                        erros_semanticos.append(f"Linha {numero_linha}: Comando WHILE requer uma condição.")
+                        continue
+
+                    tipo_condicao = pilha_tipos.pop()
+                    pilha_valores.pop()
+
+                    if tipo_condicao != 'booleano':
+                        erros_semanticos.append(f"Linha {numero_linha}: Condição do WHILE deve ser do tipo 'booleano', mas recebeu '{tipo_condicao}'.")
+
+                    tipo_resultado = promoverTipo(*pilha_tipos) if pilha_tipos else 'desconhecido'
+                    pilha_tipos.append(tipo_resultado)
+                    pilha_valores.append(None)  # valor desconhecido
+
+                    arvore_abstrata.append({
+                        'tipo': tipo_resultado,
+                        'comando': 'while',
+                        'condicao': tipo_condicao,
+                        'linha': numero_linha
+                    })
+    tipo_final = pilha_tipos.pop() if pilha_tipos else 'desconhecido'
+    return tabela_simbolos, erros_semanticos, arvore_abstrata, tipo_final
+
+
+            
+
+def analisadorSemanticoMemoria(tabela_simbolos, memoria):
+    """
+    Analisador semântico focado na memória.
+    Retorna: memoria_atualizada, erros_semanticos
+    """
+    erros_semanticos = []
+    for nome, info in tabela_simbolos.items():
+        if not info['inicializada']:
+            erros_semanticos.append(f"Linha {info['linha']}: Identificador '{nome}' declarado mas não inicializado.")
+        else:
+            memoria = adicionarMemoria(memoria, nome, info['tipo'], True)
+    return memoria, erros_semanticos
+
+def analisadorSemanticaControle(arvore_abstrata, numero_linha):
+    #valida estruturas de controle (if, while)
+    
+    erros_semanticos = []
+    for nodo in arvore_abstrata:
+         if 'comando' in nodo:
+              comando = nodo['comando']
+              if comando == 'if' or comando == 'while':
+                tipo_condicao = nodo['condicao']
+                if tipo_condicao != 'booleano':
+                     erros_semanticos.append(f"Linha {numero_linha}: Condição do {comando.upper()} deve ser do tipo 'booleano', mas recebeu '{tipo_condicao}'.")
+    return erros_semanticos
+        
+def gerarArvoreAtribuida(arvore_anotada, tipo_final, numero_linha):
+    """
+    Constrói a árvore sintática abstrata atribuída final
+    """
+    arvore_atribuida = {
+        'tipo_no': 'PROGRAMA',
+        'tipo_inferido': tipo_final,
+        'linha': numero_linha,
+        'filhos': arvore_anotada
+    }
+    
+    return arvore_atribuida
+
+# Geração de Documentação - Gramática de Atributos
+def gerarDocGramaticaAtributos(nome_arquivo):
+    """Gera arquivo markdown com a gramática de atributos"""
+    with open(f"gramatica_atributos_{nome_arquivo}.md", "w", encoding="utf-8") as doc:
+        doc.write("# Gramática de Atributos\n\n")
+        doc.write("## 1. Tipos de Dados\n\n")
+        doc.write("A linguagem suporta três tipos:\n")
+        doc.write("- `int`: Números inteiros\n")
+        doc.write("- `real` (ou `float`): Números de ponto flutuante\n")
+        doc.write("- `booleano`: Resultado de operações relacionais\n\n")
+        
+        doc.write("## 2. Atributos\n\n")
+        doc.write("### Atributos Sintetizados (propagam de baixo para cima):\n")
+        doc.write("- `tipo`: O tipo da expressão (int, real, booleano)\n")
+        doc.write("- `valor`: O valor calculado da expressão\n\n")
+        
+        doc.write("### Atributos Herdados (propagam de cima para baixo):\n")
+        doc.write("- `escopo`: Nível de escopo da variável\n")
+        doc.write("- `inicializada`: Para memórias, indica se foram inicializadas\n\n")
+        
+        doc.write("## 3. Regras de Produção com Atributos\n\n")
+        
+        doc.write("### 3.1. Operadores Aritméticos\n\n")
+        doc.write("#### Adição de Inteiros\n")
+        doc.write("```\n")
+        doc.write("Γ ⊢ e₁ : int    Γ ⊢ e₂ : int\n")
+        doc.write("─────────────────────────────\n")
+        doc.write("    Γ ⊢ (e₁ e₂ +) : int\n")
+        doc.write("```\n\n")
+        
+        doc.write("#### Adição com Promoção de Tipo\n")
+        doc.write("```\n")
+        doc.write("Γ ⊢ e₁ : T₁    Γ ⊢ e₂ : T₂\n")
+        doc.write("─────────────────────────────────────\n")
+        doc.write("Γ ⊢ (e₁ e₂ +) : promover_tipo(T₁, T₂)\n")
+        doc.write("```\n\n")
+        
+        doc.write("#### Divisão Real\n")
+        doc.write("```\n")
+        doc.write("Γ ⊢ e₁ : T₁    Γ ⊢ e₂ : T₂    T₁,T₂ ∈ {int, real}\n")
+        doc.write("────────────────────────────────────────────────\n")
+        doc.write("              Γ ⊢ (e₁ e₂ |) : real\n")
+        doc.write("```\n\n")
+        
+        doc.write("#### Divisão Inteira e Módulo\n")
+        doc.write("```\n")
+        doc.write("Γ ⊢ e₁ : int    Γ ⊢ e₂ : int\n")
+        doc.write("─────────────────────────────\n")
+        doc.write("   Γ ⊢ (e₁ e₂ /) : int\n")
+        doc.write("   Γ ⊢ (e₁ e₂ %) : int\n")
+        doc.write("```\n\n")
+        
+        doc.write("#### Potenciação\n")
+        doc.write("```\n")
+        doc.write("Γ ⊢ e₁ : T₁    Γ ⊢ e₂ : int    T₁ ∈ {int, real}\n")
+        doc.write("───────────────────────────────────────────────\n")
+        doc.write("           Γ ⊢ (e₁ e₂ ^) : T₁\n")
+        doc.write("```\n\n")
+        
+        doc.write("### 3.2. Operadores Relacionais\n\n")
+        doc.write("```\n")
+        doc.write("Γ ⊢ e₁ : T₁    Γ ⊢ e₂ : T₂    T₁,T₂ ∈ {int, real}\n")
+        doc.write("────────────────────────────────────────────────\n")
+        doc.write("        Γ ⊢ (e₁ e₂ op) : booleano\n")
+        doc.write("```\n")
+        doc.write("onde `op ∈ {<, >, <=, >=, ==, !=}`\n\n")
+        
+        doc.write("### 3.3. Estruturas de Controle\n\n")
+        doc.write("#### Condicional IF\n")
+        doc.write("```\n")
+        doc.write("Γ ⊢ e₁ : booleano    Γ ⊢ e₂ : T    Γ ⊢ e₃ : T\n")
+        doc.write("────────────────────────────────────────────────\n")
+        doc.write("        Γ ⊢ (e₁ e₂ e₃ IF) : T\n")
+        doc.write("```\n\n")
+        
+        doc.write("#### Laço WHILE\n")
+        doc.write("```\n")
+        doc.write("Γ ⊢ e₁ : booleano    Γ ⊢ e₂ : T\n")
+        doc.write("───────────────────────────────\n")
+        doc.write("    Γ ⊢ (e₁ e₂ WHILE) : T\n")
+        doc.write("```\n\n")
+        
+        doc.write("### 3.4. Comandos Especiais\n\n")
+        doc.write("#### Declaração de Variável (MEM)\n")
+        doc.write("```\n")
+        doc.write("Γ ⊢ e : T    Γ[x ↦ T] ⊢ x inicializada\n")
+        doc.write("────────────────────────────────────────\n")
+        doc.write("        Γ ⊢ (e x) : T\n")
+        doc.write("```\n\n")
+        
+        doc.write("#### Leitura de Variável\n")
+        doc.write("```\n")
+        doc.write("Γ(x) = T    x inicializada\n")
+        doc.write("───────────────────────────\n")
+        doc.write("      Γ ⊢ (x) : T\n")
+        doc.write("```\n\n")
+        
+        doc.write("#### Comando RES\n")
+        doc.write("```\n")
+        doc.write("Γ ⊢ n : int    n ≥ 0    resultado[n] : T\n")
+        doc.write("───────────────────────────────────────────\n")
+        doc.write("           Γ ⊢ (n RES) : T\n")
+        doc.write("```\n\n")
+        
+        doc.write("## 4. Função de Promoção de Tipos\n\n")
+        doc.write("```\n")
+        doc.write("promover_tipo(int, int) = int\n")
+        doc.write("promover_tipo(int, real) = real\n")
+        doc.write("promover_tipo(real, int) = real\n")
+        doc.write("promover_tipo(real, real) = real\n")
+        doc.write("```\n\n")
