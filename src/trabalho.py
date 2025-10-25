@@ -811,3 +811,64 @@ def gerarDocGramaticaAtributos(nome_arquivo):
         doc.write("promover_tipo(real, int) = real\n")
         doc.write("promover_tipo(real, real) = real\n")
         doc.write("```\n\n")
+
+# Geração de Documentação - Julgamento de Tipos
+def gerarDocJulgamentoTipos(arvore_anotada, tipo_final, numero_linha, nome_arquivo):
+    """Gera arquivo markdown com o julgamento de tipos"""
+    with open(f"julgamento_tipos_{nome_arquivo}.md", "w", encoding="utf-8") as doc:
+        doc.write("# Julgamento de Tipos\n\n")
+        doc.write(f"## Linha {numero_linha}\n\n")
+        doc.write(f"**Tipo Final da Expressão:** `{tipo_final}`\n\n")
+        
+        doc.write("### Derivação de Tipos (passo a passo):\n\n")
+        
+        for i, no in enumerate(arvore_anotada, 1):
+            doc.write(f"**Passo {i}:** {no['tipo_no']}\n")
+            doc.write(f"- Tipo inferido: `{no['tipo_inferido']}`\n")
+            
+            if no['tipo_no'] == 'LITERAL':
+                doc.write(f"- Valor: `{no['valor']}`\n")
+                doc.write(f"- Regra aplicada: Literal {no['tipo_inferido']}\n")
+            
+            elif no['tipo_no'] == 'IDENT':
+                doc.write(f"- Nome: `{no['nome']}`\n")
+                doc.write(f"- Regra aplicada: Leitura de variável\n")
+            
+            elif no['tipo_no'] == 'ATRIBUICAO':
+                doc.write(f"- Nome: `{no['nome']}`\n")
+                doc.write(f"- Valor: `{no.get('valor', 'N/A')}`\n")
+                doc.write(f"- Regra aplicada: Declaração/Atribuição de variável\n")
+            
+            elif no['tipo_no'] == 'OPERACAO':
+                doc.write(f"- Operador: `{no['operador']}`\n")
+                doc.write(f"- Operandos: `{no['operandos'][0]}`, `{no['operandos'][1]}`\n")
+                doc.write(f"- Regra aplicada: Operação aritmética ")
+                if no['operador'] == '|':
+                    doc.write("(divisão real → real)\n")
+                elif no['operador'] in ['/', '%']:
+                    doc.write("(operação inteira → int)\n")
+                elif no['operador'] == '^':
+                    doc.write("(potência, expoente int)\n")
+                else:
+                    doc.write("(promoção de tipos)\n")
+            
+            elif no['tipo_no'] == 'COMPARACAO':
+                doc.write(f"- Operador: `{no['operador']}`\n")
+                doc.write(f"- Operandos: `{no['operandos'][0]}`, `{no['operandos'][1]}`\n")
+                doc.write(f"- Regra aplicada: Comparação → booleano\n")
+            
+            elif no['tipo_no'] == 'CONDICIONAL_IF':
+                doc.write(f"- Tipo condição: `{no['tipo_condicao']}`\n")
+                doc.write(f"- Tipos dos ramos: `{no['tipos_ramos'][0]}`, `{no['tipos_ramos'][1]}`\n")
+                doc.write(f"- Regra aplicada: Estrutura condicional IF\n")
+            
+            elif no['tipo_no'] == 'LOOP_WHILE':
+                doc.write(f"- Tipo condição: `{no['tipo_condicao']}`\n")
+                doc.write(f"- Tipo corpo: `{no['tipo_corpo']}`\n")
+                doc.write(f"- Regra aplicada: Laço WHILE\n")
+            
+            elif no['tipo_no'] == 'RES':
+                doc.write(f"- Parâmetro: `{no['parametro']}`\n")
+                doc.write(f"- Regra aplicada: Comando RES (referência a resultado anterior)\n")
+            
+            doc.write(f"- Linha: {no['linha']}\n\n")
