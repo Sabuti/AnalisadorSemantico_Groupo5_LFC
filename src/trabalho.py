@@ -235,10 +235,6 @@ def adicionarMemoria(memoria, nome, tipo='desconhecido', inicializada=False):
     }
     return memoria
 
-
-
-
-
 # --------------------------
 # Analisador sintático: constrói a gramática, tabela LL(1)
 def construirGramatica():
