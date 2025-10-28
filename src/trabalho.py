@@ -85,9 +85,15 @@ def parseExpressao(linha, _tokens_):
 def estadoNumero(token):
     if not token:
         return False
+
+    if token.count(".") > 1:
+        return False
+    
     try:
-        if token.count(".") > 1:
-            return False
+        if token.count(".") == 1:
+            float(token)
+        else:
+            int(token)
         return True
     except ValueError:
         return False
@@ -184,22 +190,22 @@ def buscarSimbolo(tabela, nome):
 def definirGramaticaAtributos():
     regras_semanticas = {
         'operadores_aritmeticos': {
-            '+': {'aceita': ['int', 'real'], 'retorna': 'promover'},
-            '-': {'aceita': ['int', 'real'], 'retorna': 'promover'},
-            '*': {'aceita': ['int', 'real'], 'retorna': 'promover'},
-            '|': {'aceita': ['int', 'real'], 'retorna': 'real'},
+            '+': {'aceita': ['int', 'float'], 'retorna': 'promover'},
+            '-': {'aceita': ['int', 'float'], 'retorna': 'promover'},
+            '*': {'aceita': ['int', 'float'], 'retorna': 'promover'},
+            '|': {'aceita': ['int', 'float'], 'retorna': 'float'},
             '/': {'aceita': ['int'], 'retorna': 'int'},
             '%': {'aceita': ['int'], 'retorna': 'int'},
-            '^': {'aceita_base': ['int', 'real'], 'aceita_exp': ['int'], 'retorna': 'promover'}
+            '^': {'aceita_base': ['int', 'float'], 'aceita_exp': ['int'], 'retorna': 'promover'}
         },
         'operadores_relacionais': {
-            '<': {'aceita': ['int', 'real'], 'retorna': 'booleano'},
-            '>': {'aceita': ['int', 'real'], 'retorna': 'booleano'},
-            '<=': {'aceita': ['int', 'real'], 'retorna': 'booleano'},
-            '>=': {'aceita': ['int', 'real'], 'retorna': 'booleano'},
-            '==': {'aceita': ['int', 'real'], 'retorna': 'booleano'},
-            '!=': {'aceita': ['int', 'real'], 'retorna': 'booleano'},
-            '<>': {'aceita': ['int', 'real'], 'retorna': 'booleano'}
+            '<': {'aceita': ['int', 'float'], 'retorna': 'booleano'},
+            '>': {'aceita': ['int', 'float'], 'retorna': 'booleano'},
+            '<=': {'aceita': ['int', 'float'], 'retorna': 'booleano'},
+            '>=': {'aceita': ['int', 'float'], 'retorna': 'booleano'},
+            '==': {'aceita': ['int', 'float'], 'retorna': 'booleano'},
+            '!=': {'aceita': ['int', 'float'], 'retorna': 'booleano'},
+            '<>': {'aceita': ['int', 'float'], 'retorna': 'booleano'}
         },
         'estruturas_controle': {
             'if': {'condicao': 'booleano', 'retorna': 'tipo_ramos'},
@@ -207,15 +213,15 @@ def definirGramaticaAtributos():
         },
         'comandos_especiais': {
             'res': {'parametro': 'int', 'retorna': 'tipo_resultado'},
-            'mem_atrib': {'valor': ['int', 'real'], 'retorna': 'tipo_valor'},
+            'mem_atrib': {'valor': ['int', 'float'], 'retorna': 'tipo_valor'},
             'mem_leitura': {'retorna': 'tipo_memoria'}
         }
     }
     return regras_semanticas
 
 def promoverTipo(tipo1, tipo2):
-    if tipo1 == 'real' or tipo2 == 'real':
-        return 'real'
+    if tipo1 == 'float' or tipo2 == 'float':
+        return 'float'
     if tipo1 == 'int' and tipo2 == 'int':
         return 'int'
     if tipo1 == 'booleano' or tipo2 == 'booleano':
@@ -415,6 +421,10 @@ def analisarSemantica(derivacao, tokens_valores, tabela_simbolos, regras_semanti
             continue
         
         for simbolo in producao:
+            if simbolo in ['(', ')']:
+                idx_valor += 1
+                continue
+
             if simbolo == 'int':
                 tipo = 'int'
                 valor = tokens_valores[idx_valor]
@@ -429,7 +439,7 @@ def analisarSemantica(derivacao, tokens_valores, tabela_simbolos, regras_semanti
                 })
             
             elif simbolo == 'float':
-                tipo = 'real'
+                tipo = 'float'
                 valor = tokens_valores[idx_valor]
                 idx_valor += 1
                 pilha_tipos.append(tipo)
@@ -445,10 +455,19 @@ def analisarSemantica(derivacao, tokens_valores, tabela_simbolos, regras_semanti
                 nome = tokens_valores[idx_valor]
                 idx_valor += 1
                 
-                if len(pilha_tipos) > 0:
-                    tipo_valor = pilha_tipos[-1]
-                    valor = pilha_valores[-1] if pilha_valores else None
-                    tabela_simbolos = adicionarSimbolo(tabela_simbolos, nome, tipo_valor, True, valor, numero_linha)
+                if len(pilha_tipos) > 0: # Atribuição. Exemplo: (5 MEM)
+                    tipo_valor = pilha_tipos.pop()
+                    valor = pilha_valores.pop() if pilha_valores else None
+                    
+                    # Adiciona à tabela de símbolos
+                    tabela_simbolos = adicionarSimbolo(
+                        tabela_simbolos, nome, tipo_valor, True, valor, numero_linha
+                    )
+                    
+                    # Atribuição retorna o tipo do valor atribuído
+                    pilha_tipos.append(tipo_valor)
+                    pilha_valores.append(valor)
+                    
                     arvore_anotada.append({
                         'tipo_no': 'ATRIBUICAO',
                         'tipo_inferido': tipo_valor,
@@ -456,7 +475,7 @@ def analisarSemantica(derivacao, tokens_valores, tabela_simbolos, regras_semanti
                         'valor': valor,
                         'linha': numero_linha
                     })
-                else:
+                else: # Leitura. Exemplo: (MEM)
                     info = buscarSimbolo(tabela_simbolos, nome)
                     if info is None:
                         erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: Variável '{nome}' usada sem declaração prévia\nContexto: ({nome})")
@@ -481,34 +500,73 @@ def analisarSemantica(derivacao, tokens_valores, tabela_simbolos, regras_semanti
                     })
             
             elif simbolo == 'res':
-                if len(pilha_tipos) > 0:
-                    if pilha_tipos[-1] != 'int':
-                        erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: RES requer parâmetro inteiro\nContexto: (N RES)")
+                idx_valor += 1  # Avança o 'res' em tokens_valores
+
+                if len(pilha_tipos) < 1:
+                    erros.append(
+                        f"ERRO SEMÂNTICO [Linha {numero_linha}]: "
+                        f"RES requer um parâmetro\nContexto: (RES)"
+                    )
+                    pilha_tipos.append('desconhecido')
+                    pilha_valores.append(None)
+                    continue
+                
+                # Verifica tipo do parâmetro
+                if pilha_tipos[-1] != 'int':
+                    erros.append(
+                        f"ERRO SEMÂNTICO [Linha {numero_linha}]: "
+                        f"RES requer parâmetro inteiro\nContexto: (N RES)"
+                    )
+                    tipo_resultado = 'desconhecido'
+                    n = 0
+                else:
+                    # Pega o valor inteiro da pilha
+                    n_valor = pilha_valores[-1]
+                    
+                    # Garante que é um inteiro válido
+                    if isinstance(n_valor, (int, float)):
+                        n = int(n_valor)
                     else:
-                        n = int(pilha_valores[-1]) if pilha_valores else 0
-                        if n < 0:
-                            erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: RES requer N não negativo\nContexto: ({n} RES)")
-                            tipo_resultado = 'desconhecido'
-                        elif n >= len(historico_resultados):
-                            erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: RES({n}) referencia linha inexistente\nContexto: ({n} RES)")
-                            tipo_resultado = 'desconhecido'
-                        else:
-                            idx_resultado = len(historico_resultados) - 1 - n
-                            tipo_resultado = historico_resultados[idx_resultado]['tipo']
-                        
-                        pilha_tipos.pop()
-                        pilha_valores.pop()
-                        pilha_tipos.append(tipo_resultado)
-                        pilha_valores.append(None)
-                        
-                        arvore_anotada.append({
-                            'tipo_no': 'RES',
-                            'tipo_inferido': tipo_resultado,
-                            'parametro': n,
-                            'linha': numero_linha
-                        })
+                        erros.append(
+                            f"ERRO SEMÂNTICO [Linha {numero_linha}]: "
+                            f"RES com parâmetro inválido\nContexto: ({n_valor} RES)"
+                        )
+                        n = 0
+                        tipo_resultado = 'desconhecido'
+                    
+                    # Validações do RES
+                    if n < 0:
+                        erros.append(
+                            f"ERRO SEMÂNTICO [Linha {numero_linha}]: "
+                            f"RES requer N não negativo\nContexto: ({n} RES)"
+                        )
+                        tipo_resultado = 'desconhecido'
+                    elif n >= len(historico_resultados):
+                        erros.append(
+                            f"ERRO SEMÂNTICO [Linha {numero_linha}]: "
+                            f"RES({n}) referencia linha inexistente\nContexto: ({n} RES)"
+                        )
+                        tipo_resultado = 'desconhecido'
+                    else:
+                        idx_resultado = len(historico_resultados) - 1 - n
+                        tipo_resultado = historico_resultados[idx_resultado]['tipo']
+                
+                # Remove o parâmetro e adiciona o resultado
+                pilha_tipos.pop()
+                pilha_valores.pop()
+                pilha_tipos.append(tipo_resultado)
+                pilha_valores.append(None)
+                
+                arvore_anotada.append({
+                    'tipo_no': 'RES',
+                    'tipo_inferido': tipo_resultado,
+                    'parametro': n if 'n' in locals() else 0,
+                    'linha': numero_linha
+                })
             
             elif simbolo in ['+', '-', '*', '/', '%', '^', '|']:
+                idx_valor += 1  # Avança o operador em tokens_valores
+
                 if len(pilha_tipos) < 2:
                     erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: Operador '{simbolo}' requer dois operandos\nContexto: operação incompleta")
                     continue
@@ -522,7 +580,7 @@ def analisarSemantica(derivacao, tokens_valores, tabela_simbolos, regras_semanti
                 
                 if simbolo == '^':
                     if tipo1 not in regra['aceita_base']:
-                        erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: Potência requer base int ou real\nContexto: ({tipo1} {tipo2} ^)")
+                        erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: Potência requer base int ou float\nContexto: ({tipo1} {tipo2} ^)")
                     if tipo2 != 'int':
                         erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: Potência requer expoente inteiro\nContexto: ({tipo1} {tipo2} ^)")
                     tipo_resultado = promoverTipo(tipo1, 'int')
@@ -530,18 +588,23 @@ def analisarSemantica(derivacao, tokens_valores, tabela_simbolos, regras_semanti
                 elif simbolo in ['/', '%']:
                     if tipo1 != 'int' or tipo2 != 'int':
                         erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: Operador '{simbolo}' requer operandos inteiros\nContexto: ({tipo1} {tipo2} {simbolo})")
-                    tipo_resultado = 'int'
+                    tipo_resultado = 'int' # retorna int para não causar cascata de erros
                 
                 elif simbolo == '|':
                     if tipo1 not in regra['aceita'] or tipo2 not in regra['aceita']:
-                        erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: Divisão real requer operandos numéricos\nContexto: ({tipo1} {tipo2} |)")
-                    tipo_resultado = 'real'
+                        erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: Divisão float requer operandos numéricos\nContexto: ({tipo1} {tipo2} |)")
+                    tipo_resultado = 'float'
                 
                 else:
                     if tipo1 not in regra['aceita'] or tipo2 not in regra['aceita']:
                         erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: Operador '{simbolo}' com tipos incompatíveis\nContexto: ({tipo1} {tipo2} {simbolo})")
                     tipo_resultado = promoverTipo(tipo1, tipo2)
                 
+                if tipo_resultado == 'desconhecido':
+                    pilha_tipos.append('desconhecido')
+                    pilha_valores.append(None)
+                    continue
+
                 pilha_tipos.append(tipo_resultado)
                 pilha_valores.append(None)
                 
@@ -554,6 +617,8 @@ def analisarSemantica(derivacao, tokens_valores, tabela_simbolos, regras_semanti
                 })
             
             elif simbolo in ['<', '>', '<=', '>=', '==', '!=', '<>']:
+                idx_valor += 1  # Avança o operador em tokens_valores
+
                 if len(pilha_tipos) < 2:
                     erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: Operador '{simbolo}' requer dois operandos\nContexto: comparação incompleta")
                     continue
@@ -581,6 +646,8 @@ def analisarSemantica(derivacao, tokens_valores, tabela_simbolos, regras_semanti
                 })
             
             elif simbolo == 'if':
+                idx_valor += 1  # Avança o operador em tokens_valores
+
                 if len(pilha_tipos) < 3:
                     erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: IF requer condição e dois ramos\nContexto: estrutura IF incompleta")
                     continue
@@ -608,6 +675,8 @@ def analisarSemantica(derivacao, tokens_valores, tabela_simbolos, regras_semanti
                 })
             
             elif simbolo == 'while':
+                idx_valor += 1  # Avança o operador em tokens_valores
+
                 if len(pilha_tipos) < 2:
                     erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: WHILE requer condição e corpo\nContexto: estrutura WHILE incompleta")
                     continue
@@ -631,7 +700,7 @@ def analisarSemantica(derivacao, tokens_valores, tabela_simbolos, regras_semanti
                     'tipo_corpo': tipo_corpo,
                     'linha': numero_linha
                 })
-    
+
     tipo_final = pilha_tipos[-1] if pilha_tipos else 'desconhecido'
     
     return tabela_simbolos, erros, arvore_anotada, tipo_final
@@ -677,12 +746,12 @@ def gerarDocGramaticaAtributos(nome_arquivo):
         doc.write("## 1. Tipos de Dados\n\n")
         doc.write("A linguagem suporta três tipos:\n")
         doc.write("- `int`: Números inteiros\n")
-        doc.write("- `real` (ou `float`): Números de ponto flutuante\n")
+        doc.write("- `float`: Números de ponto flutuante\n")
         doc.write("- `booleano`: Resultado de operações relacionais\n\n")
         
         doc.write("## 2. Atributos\n\n")
         doc.write("### Atributos Sintetizados (propagam de baixo para cima):\n")
-        doc.write("- `tipo`: O tipo da expressão (int, real, booleano)\n")
+        doc.write("- `tipo`: O tipo da expressão (int, float, booleano)\n")
         doc.write("- `valor`: O valor calculado da expressão\n\n")
         
         doc.write("### Atributos Herdados (propagam de cima para baixo):\n")
@@ -708,9 +777,9 @@ def gerarDocGramaticaAtributos(nome_arquivo):
         
         doc.write("#### Divisão Real\n")
         doc.write("```\n")
-        doc.write("Γ ⊢ e₁ : T₁    Γ ⊢ e₂ : T₂    T₁,T₂ ∈ {int, real}\n")
+        doc.write("Γ ⊢ e₁ : T₁    Γ ⊢ e₂ : T₂    T₁,T₂ ∈ {int, float}\n")
         doc.write("────────────────────────────────────────────────\n")
-        doc.write("              Γ ⊢ (e₁ e₂ |) : real\n")
+        doc.write("              Γ ⊢ (e₁ e₂ |) : float\n")
         doc.write("```\n\n")
         
         doc.write("#### Divisão Inteira e Módulo\n")
@@ -723,14 +792,14 @@ def gerarDocGramaticaAtributos(nome_arquivo):
         
         doc.write("#### Potenciação\n")
         doc.write("```\n")
-        doc.write("Γ ⊢ e₁ : T₁    Γ ⊢ e₂ : int    T₁ ∈ {int, real}\n")
+        doc.write("Γ ⊢ e₁ : T₁    Γ ⊢ e₂ : int    T₁ ∈ {int, float}\n")
         doc.write("───────────────────────────────────────────────\n")
         doc.write("           Γ ⊢ (e₁ e₂ ^) : T₁\n")
         doc.write("```\n\n")
         
         doc.write("### 3.2. Operadores Relacionais\n\n")
         doc.write("```\n")
-        doc.write("Γ ⊢ e₁ : T₁    Γ ⊢ e₂ : T₂    T₁,T₂ ∈ {int, real}\n")
+        doc.write("Γ ⊢ e₁ : T₁    Γ ⊢ e₂ : T₂    T₁,T₂ ∈ {int, float}\n")
         doc.write("────────────────────────────────────────────────\n")
         doc.write("        Γ ⊢ (e₁ e₂ op) : booleano\n")
         doc.write("```\n")
@@ -776,9 +845,9 @@ def gerarDocGramaticaAtributos(nome_arquivo):
         doc.write("## 4. Função de Promoção de Tipos\n\n")
         doc.write("```\n")
         doc.write("promover_tipo(int, int) = int\n")
-        doc.write("promover_tipo(int, real) = real\n")
-        doc.write("promover_tipo(real, int) = real\n")
-        doc.write("promover_tipo(real, real) = real\n")
+        doc.write("promover_tipo(int, float) = float\n")
+        doc.write("promover_tipo(float, int) = float\n")
+        doc.write("promover_tipo(float, float) = float\n")
         doc.write("```\n\n")
 
 # -------------------------
@@ -813,7 +882,7 @@ def gerarDocJulgamentoTipos(arvore_anotada, tipo_final, numero_linha, nome_arqui
                 doc.write(f"- Operandos: `{no['operandos'][0]}`, `{no['operandos'][1]}`\n")
                 doc.write(f"- Regra aplicada: Operação aritmética ")
                 if no['operador'] == '|':
-                    doc.write("(divisão real → real)\n")
+                    doc.write("(divisão float → float)\n")
                 elif no['operador'] in ['/', '%']:
                     doc.write("(operação inteira → int)\n")
                 elif no['operador'] == '^':
@@ -849,13 +918,13 @@ def gerarDocErrosSemanticos(todos_erros, nome_arquivo):
         doc.write("# Erros Semânticos Detectados\n\n")
         
         if not todos_erros:
-            doc.write("✅ **Nenhum erro semântico encontrado.**\n\n")
+            doc.write("**Nenhum erro semântico encontrado.**\n\n")
             doc.write("O programa está semanticamente correto:\n")
             doc.write("- Todos os tipos são compatíveis\n")
             doc.write("- Todas as variáveis foram inicializadas antes do uso\n")
             doc.write("- Todas as estruturas de controle estão corretas\n")
         else:
-            doc.write(f"❌ **Total de erros encontrados:** {len(todos_erros)}\n\n")
+            doc.write(f"**Total de erros encontrados:** {len(todos_erros)}\n\n")
             doc.write("---\n\n")
             
             for i, erro in enumerate(todos_erros, 1):
@@ -973,6 +1042,11 @@ def main():
                 print(f"  - Análise sintática concluída ({len(derivacao)} produções).")
 
                 # Etapa 3: Análise Semântica
+                if 'memorias_declaradas' in tabela_simbolos: # Limpa memórias da linha anterior
+                    tabela_simbolos['memorias_declaradas'].clear()
+                if 'memorias_usadas' in tabela_simbolos:
+                    tabela_simbolos['memorias_usadas'].clear()
+
                 tabela_simbolos, erros, arvore_anotada, tipo_final = analisarSemantica(
                     derivacao, tokens_valores, tabela_simbolos,
                     regras_semanticas, historico_resultados, numero_linha
