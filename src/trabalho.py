@@ -163,7 +163,7 @@ def analisadorLexico(tokens_originais):
                 tokens_convertidos.append("ident")
                 tokens_valores.append(token)
             continue
-        raise ValueError(f"Erro léxico: token inválido -> {token}")
+        raise ValueError(f"Erro Léxico: token inválido -> {token}")
     
     return tokens_convertidos, tokens_valores
 
@@ -172,18 +172,35 @@ def analisadorLexico(tokens_originais):
 def inicializarTabelaSimbolos():
     return {}
 
-def adicionarSimbolo(tabela, nome, tipo='desconhecido', inicializada=False, valor=None, linha=0):
-    tabela[nome] = {
-        'tipo': tipo,
-        'inicializada': inicializada,
-        'valor': valor,
-        'linha': linha,
-        'usada': False
-    }
+def adicionarSimbolo(tabela, nome, tipo='desconhecido', inicializada=False, valor=None, linha=0, escopo='global'):
+    if nome in tabela:
+        tabela[nome]['tipo'] = tipo
+        tabela[nome]['inicializada'] = inicializada
+        tabela[nome]['valor'] = valor
+        if not tabela[nome].get('linha_declaracao'):
+            tabela[nome]['linha_declaracao'] = linha
+    else:
+        tabela[nome] = {
+            'tipo': tipo,
+            'inicializada': inicializada,
+            'valor': valor,
+            'linha_declaracao': linha,
+            'escopo': escopo,
+            'usada': False,
+            'linhas_uso': [] # Lista para rastrear linhas onde o símbolo é usado
+        }
     return tabela
 
 def buscarSimbolo(tabela, nome):
     return tabela.get(nome, None)
+
+def marcarSimboloUsado(tabela, nome, linha):
+    if nome in tabela:
+        tabela[nome]['usada'] = True
+        if 'linhas_uso' not in tabela[nome]:
+            tabela[nome]['linhas_uso'] = []
+        if linha not in tabela[nome]['linhas_uso']:
+            tabela[nome]['linhas_uso'].append(linha)
 
 # -------------------------
 # Definição da Gramática de Atributos
@@ -414,21 +431,77 @@ def analisarSemantica(derivacao, tokens_valores, tabela_simbolos, regras_semanti
     arvore_anotada = []
     pilha_tipos = []
     pilha_valores = []
+    elementos_expr = []
     idx_valor = 0
+    profundidade = 0
+
+    atribuicoes_nomes = set()
+
+    for i, token in enumerate(tokens_valores):
+        if token == '(':
+            if profundidade == 0:
+                elementos_expr = []
+            elif profundidade == 1:
+                sub_prof = 1
+                i += 1
+                while i < len(tokens_valores) and sub_prof > 0:
+                    if tokens_valores[i] == '(':
+                        sub_prof += 1
+                    elif tokens_valores[i] == ')':
+                        sub_prof -= 1
+                    i += 1
+                elementos_expr.append(('subexpr', None))
+            profundidade += 1
+
+        elif token == ')':
+            profundidade -= 1
+            if profundidade == 0:
+                if len(elementos_expr) == 2: #verificar se é atribuição (len==2 e segundo é ident)
+                    tipo1, val1 = elementos_expr[0]
+                    tipo2, val2 = elementos_expr[1]
+                    if tipo2 == 'ident' and val2 is not None:
+                        if tipo1 in ['int', 'float', 'subexpr', 'ident', 'res']:
+                            atribuicoes_nomes.add(val2)
+                elementos_expr = []
+
+        elif profundidade == 1 and token not in ['(', ')']:
+            if isinstance(token, int):
+                elementos_expr.append(('int', None))
+            elif isinstance(token, float):
+                elementos_expr.append(('float', None))
+            elif token in ['+', '-', '*', '/', '%', '^', '|', '<', '>', '<=', '>=', '==', '!=', '<>']:
+                elementos_expr.append(('op', token))
+            elif token in ['RES', 'res']:
+                elementos_expr.append(('res', None))
+            elif token in ['IF', 'if']:
+                elementos_expr.append(('if', None))
+            elif token in ['WHILE', 'while']:
+                elementos_expr.append(('while', None))
+            elif isinstance(token, str):
+                elementos_expr.append(('ident', token))
+        i += 1
+
+    tokens_processaveis = [v for v in tokens_valores if v not in ['(', ')']]
+    memorias_declaradas_nesta_linha = set()
     
     for nao_terminal, producao in derivacao:
         if not producao or producao == [EPS]:
             continue
         
         for simbolo in producao:
+
             if simbolo in ['(', ')']:
-                idx_valor += 1
                 continue
 
             if simbolo == 'int':
+                if idx_valor >= len(tokens_processaveis):
+                    erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: Token inesperado")
+                    continue
+
                 tipo = 'int'
-                valor = tokens_valores[idx_valor]
+                valor = tokens_processaveis[idx_valor]
                 idx_valor += 1
+
                 pilha_tipos.append(tipo)
                 pilha_valores.append(valor)
                 arvore_anotada.append({
@@ -439,9 +512,14 @@ def analisarSemantica(derivacao, tokens_valores, tabela_simbolos, regras_semanti
                 })
             
             elif simbolo == 'float':
+                if idx_valor >= len(tokens_processaveis):
+                    erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: Token inesperado")
+                    continue
+
                 tipo = 'float'
-                valor = tokens_valores[idx_valor]
+                valor = tokens_processaveis[idx_valor]
                 idx_valor += 1
+
                 pilha_tipos.append(tipo)
                 pilha_valores.append(valor)
                 arvore_anotada.append({
@@ -452,123 +530,165 @@ def analisarSemantica(derivacao, tokens_valores, tabela_simbolos, regras_semanti
                 })
             
             elif simbolo == 'ident':
-                nome = tokens_valores[idx_valor]
+                if idx_valor >= len(tokens_processaveis):
+                    erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: Token inesperado")
+                    continue
+
+                nome = tokens_processaveis[idx_valor]
                 idx_valor += 1
-                
-                if len(pilha_tipos) > 0: # Atribuição. Exemplo: (5 MEM)
+
+                if nome in ['(', ')', '+', '-', '*', '/', '%', '^', '|',
+                            '<', '>', '<=', '>=', '==', '!=', '<>', 'IF', 'WHILE', 'RES', 'res']:
+                    erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: "
+                                f"Token sintático '{nome}' tratado como identificador inválido")
+                    continue
+
+                eh_atribuicao = nome in atribuicoes_nomes
+
+                if eh_atribuicao:
+                    if len(pilha_tipos) < 1:
+                        erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: Atribuição requer valor")
+                        continue
                     tipo_valor = pilha_tipos.pop()
                     valor = pilha_valores.pop() if pilha_valores else None
-                    
-                    # Adiciona à tabela de símbolos
                     tabela_simbolos = adicionarSimbolo(
                         tabela_simbolos, nome, tipo_valor, True, valor, numero_linha
                     )
-                    
-                    # Atribuição retorna o tipo do valor atribuído
+
+                    memorias_declaradas_nesta_linha.add(nome)
                     pilha_tipos.append(tipo_valor)
                     pilha_valores.append(valor)
-                    
+
                     arvore_anotada.append({
                         'tipo_no': 'ATRIBUICAO',
-                        'tipo_inferido': tipo_valor,
+                        'tipo_inferido': 'desconhecido',
                         'nome': nome,
-                        'valor': valor,
+                        'valor': None,
                         'linha': numero_linha
                     })
+
                 else: # Leitura. Exemplo: (MEM)
                     info = buscarSimbolo(tabela_simbolos, nome)
                     if info is None:
                         erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: Variável '{nome}' usada sem declaração prévia\nContexto: ({nome})")
                         tipo = 'desconhecido'
-                        valor = None
+                        valor = "X"
+                        tipo_valor = 'desconhecido'
+
+                        tabela_simbolos = adicionarSimbolo(
+                        tabela_simbolos, nome, tipo_valor, False, valor, numero_linha
+                    )
                     elif not info['inicializada']:
                         erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: Memória '{nome}' utilizada sem inicialização\nContexto: ({nome})")
                         tipo = info['tipo']
-                        valor = None
+                        valor = "X"
+                        tipo_valor = 'desconhecido'
+
+                        tabela_simbolos = adicionarSimbolo(
+                        tabela_simbolos, nome, tipo_valor, False, valor, numero_linha
+                    )
                     else:
                         tipo = info['tipo']
                         valor = info['valor']
-                        tabela_simbolos[nome]['usada'] = True
+                        marcarSimboloUsado(tabela_simbolos, nome, numero_linha) # Marca o símbolo como usado
                     
                     pilha_tipos.append(tipo)
                     pilha_valores.append(valor)
+
                     arvore_anotada.append({
-                        'tipo_no': 'IDENT',
+                        'tipo_no': 'LEITURA_VARIAVEL',
                         'tipo_inferido': tipo,
                         'nome': nome,
                         'linha': numero_linha
                     })
             
             elif simbolo == 'res':
-                idx_valor += 1  # Avança o 'res' em tokens_valores
+                if idx_valor >= len(tokens_processaveis):
+                    erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: Token inesperado")
+                    continue
+
+                if tokens_processaveis[idx_valor] not in ['RES', 'res']:
+                    erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: Esperado 'RES', encontrado '{tokens_processaveis[idx_valor]}'")
+                    idx_valor += 1
+                    continue
+                    
+                idx_valor += 1  # Consome o 'RES'
 
                 if len(pilha_tipos) < 1:
-                    erros.append(
-                        f"ERRO SEMÂNTICO [Linha {numero_linha}]: "
-                        f"RES requer um parâmetro\nContexto: (RES)"
-                    )
+                    erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: RES requer um parâmetro")
                     pilha_tipos.append('desconhecido')
                     pilha_valores.append(None)
+
+                    arvore_anotada.append({
+                        'tipo_no': 'RES',
+                        'tipo_inferido': 'desconhecido',
+                        'parametro': None,
+                        'linha': numero_linha
+                    })
                     continue
-                
-                # Verifica tipo do parâmetro
-                if pilha_tipos[-1] != 'int':
-                    erros.append(
-                        f"ERRO SEMÂNTICO [Linha {numero_linha}]: "
-                        f"RES requer parâmetro inteiro\nContexto: (N RES)"
-                    )
+
+                tipo_param = pilha_tipos.pop()
+                n_valor = pilha_valores.pop() if pilha_valores else None
+
+                # Validação de tipo
+                if tipo_param != 'int':
+                    erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: RES requer parâmetro inteiro, recebeu '{tipo_param}'")
+                    pilha_tipos.append('desconhecido')
+                    pilha_valores.append(None)
+
+                    arvore_anotada.append({
+                        'tipo_no': 'RES',
+                        'tipo_inferido': 'desconhecido',
+                        'parametro': 0,
+                        'linha': numero_linha
+                    })
+                    continue
+
+                # Verificação de valor
+                if not isinstance(n_valor, int):
+                    erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: RES com valor inválido: {n_valor}")
+                    pilha_tipos.append('desconhecido')
+                    pilha_valores.append(None)
+
+                    arvore_anotada.append({
+                        'tipo_no': 'RES',
+                        'tipo_inferido': 'desconhecido',
+                        'parametro': 0,
+                        'linha': numero_linha
+                    })
+                    continue
+
+                n = int(n_valor)
+                if n < 0:
+                    erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: RES requer N não negativo")
                     tipo_resultado = 'desconhecido'
-                    n = 0
+                elif n >= len(historico_resultados):
+                    erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: RES({n}) referencia linha inexistente")
+                    tipo_resultado = 'desconhecido'
                 else:
-                    # Pega o valor inteiro da pilha
-                    n_valor = pilha_valores[-1]
-                    
-                    # Garante que é um inteiro válido
-                    if isinstance(n_valor, (int, float)):
-                        n = int(n_valor)
-                    else:
-                        erros.append(
-                            f"ERRO SEMÂNTICO [Linha {numero_linha}]: "
-                            f"RES com parâmetro inválido\nContexto: ({n_valor} RES)"
-                        )
-                        n = 0
-                        tipo_resultado = 'desconhecido'
-                    
-                    # Validações do RES
-                    if n < 0:
-                        erros.append(
-                            f"ERRO SEMÂNTICO [Linha {numero_linha}]: "
-                            f"RES requer N não negativo\nContexto: ({n} RES)"
-                        )
-                        tipo_resultado = 'desconhecido'
-                    elif n >= len(historico_resultados):
-                        erros.append(
-                            f"ERRO SEMÂNTICO [Linha {numero_linha}]: "
-                            f"RES({n}) referencia linha inexistente\nContexto: ({n} RES)"
-                        )
-                        tipo_resultado = 'desconhecido'
-                    else:
-                        idx_resultado = len(historico_resultados) - 1 - n
-                        tipo_resultado = historico_resultados[idx_resultado]['tipo']
-                
-                # Remove o parâmetro e adiciona o resultado
-                pilha_tipos.pop()
-                pilha_valores.pop()
+                    idx_resultado = len(historico_resultados) - 1 - n
+                    tipo_resultado = historico_resultados[idx_resultado]['tipo']
+
                 pilha_tipos.append(tipo_resultado)
                 pilha_valores.append(None)
-                
+
                 arvore_anotada.append({
                     'tipo_no': 'RES',
                     'tipo_inferido': tipo_resultado,
-                    'parametro': n if 'n' in locals() else 0,
+                    'parametro': n,
                     'linha': numero_linha
                 })
-            
+
             elif simbolo in ['+', '-', '*', '/', '%', '^', '|']:
+                if idx_valor >= len(tokens_processaveis):
+                    erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: Token inesperado")
+                    continue
+
                 idx_valor += 1  # Avança o operador em tokens_valores
 
                 if len(pilha_tipos) < 2:
-                    erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: Operador '{simbolo}' requer dois operandos\nContexto: operação incompleta")
+                    erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: "
+                                f"Operador '{simbolo}' requer dois operandos\nContexto: operação incompleta")
                     continue
                 
                 tipo2 = pilha_tipos.pop()
@@ -616,7 +736,11 @@ def analisarSemantica(derivacao, tokens_valores, tabela_simbolos, regras_semanti
                     'linha': numero_linha
                 })
             
-            elif simbolo in ['<', '>', '<=', '>=', '==', '!=', '<>']:
+            elif simbolo in ['<', '>', '<=', '>=', '==', '!=']:
+                if idx_valor >= len(tokens_processaveis):
+                    erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: Token inesperado")
+                    continue
+
                 idx_valor += 1  # Avança o operador em tokens_valores
 
                 if len(pilha_tipos) < 2:
@@ -646,6 +770,10 @@ def analisarSemantica(derivacao, tokens_valores, tabela_simbolos, regras_semanti
                 })
             
             elif simbolo == 'if':
+                if idx_valor >= len(tokens_processaveis):
+                    erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: Token inesperado")
+                    continue
+
                 idx_valor += 1  # Avança o operador em tokens_valores
 
                 if len(pilha_tipos) < 3:
@@ -675,6 +803,10 @@ def analisarSemantica(derivacao, tokens_valores, tabela_simbolos, regras_semanti
                 })
             
             elif simbolo == 'while':
+                if idx_valor >= len(tokens_processaveis):
+                    erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: Token inesperado")
+                    continue
+                
                 idx_valor += 1  # Avança o operador em tokens_valores
 
                 if len(pilha_tipos) < 2:
@@ -703,15 +835,28 @@ def analisarSemantica(derivacao, tokens_valores, tabela_simbolos, regras_semanti
 
     tipo_final = pilha_tipos[-1] if pilha_tipos else 'desconhecido'
     
-    return tabela_simbolos, erros, arvore_anotada, tipo_final
+    return tabela_simbolos, erros, arvore_anotada, tipo_final, memorias_declaradas_nesta_linha
 
 # -------------------------
 # Analisador Semântico - Validação de Memória
-def analisarSemanticaMemoria(tabela_simbolos, numero_linha):
+def analisarSemanticaMemoria(tabela_simbolos, numero_linha, memorias_declaradas_nesta_linha):
     erros = []
-    for nome, info in tabela_simbolos.items():
-        if info['inicializada'] and not info['usada'] and nome != 'RES':
-            erros.append(f"AVISO [Linha {numero_linha}]: Memória '{nome}' declarada mas não utilizada")
+    for nome in memorias_declaradas_nesta_linha:
+        if nome in ['(', ')', '+', '-', '*', '/', '%', '^', '|', '<', '>', '<=', '>=', '==', '!=', '<>']:
+            continue
+
+        info = tabela_simbolos.get(nome)
+        if not info:
+            continue
+
+        # 🔹 Se foi uma atribuição (linha de declaração == linha atual), ignora
+        if info['linha_declaracao'] == numero_linha:
+            continue
+
+        # 🔹 Se foi inicializada, mas nunca usada depois # é pra dar erro?
+        #if info['inicializada'] and not info['usada']:
+        #    erros.append(f"ERRO SEMÂNTICO [Linha {numero_linha}]: Memória '{nome}' declarada mas não utilizada")
+
     return erros
 
 # -------------------------
@@ -962,17 +1107,27 @@ def gerarDocTabelaSimbolos(tabela_simbolos, nome_arquivo):
     
     with open(f"tabela_simbolos_{nome_arquivo}.md", "w", encoding="utf-8") as doc:
         doc.write("# Tabela de Símbolos\n\n")
+        doc.write("Armazena informações sobre identificadores (variáveis/memórias) do programa.\n\n")
         
-        if not tabela_simbolos:
+        tokens_sintaticos = {'(', ')', '+', '-', '*', '/', '%', '^', '|', '<', '>', '<=', '>=', '==', '!=', '<>', 'IF', 'WHILE', 'RES'}
+        simbolos_validos = {k: v for k, v in tabela_simbolos.items() if k not in tokens_sintaticos}
+
+        if not simbolos_validos:
             doc.write("*Tabela vazia - nenhuma variável declarada*\n\n")
         else:
-            doc.write("| Símbolo | Tipo | Inicializada | Valor | Linha | Usada |\n")
-            doc.write("|---------|------|--------------|-------|-------|-------|\n")
+            doc.write("| Símbolo | Tipo | Inicializada | Valor | Linha Declaração | Escopo | Usada | Linhas de Uso |\n")
+            doc.write("|---------|------|--------------|-------|------------------|--------|-------|---------------|\n")
             
-            for simbolo, info in sorted(tabela_simbolos.items()):
+            for simbolo, info in sorted(simbolos_validos.items(), key=lambda x: str(x[0])):
                 valor = str(info['valor']) if info['valor'] is not None else "N/A"
-                doc.write(f"| {simbolo} | {info['tipo']} | {'Sim' if info['inicializada'] else 'Não'} | ")
-                doc.write(f"{valor} | {info['linha']} | {'Sim' if info['usada'] else 'Não'} |\n")
+                escopo = info.get('escopo', 'global')
+                linhas_uso = ', '.join(map(str, info.get('linhas_uso', []))) or "N/A"
+                
+                doc.write(f"| {simbolo} | {info['tipo']} | ")
+                doc.write(f"{'Sim' if info['inicializada'] else 'Não'} | ")
+                doc.write(f"{valor} | {info.get('linha_declaracao', 'N/A')} | ")
+                doc.write(f"{escopo} | {'Sim' if info['usada'] else 'Não'} | ")
+                doc.write(f"{linhas_uso} |\n")
             
             doc.write(f"\n**Total de símbolos:** {len(tabela_simbolos)}\n")
 
@@ -1042,18 +1197,13 @@ def main():
                 print(f"  - Análise sintática concluída ({len(derivacao)} produções).")
 
                 # Etapa 3: Análise Semântica
-                if 'memorias_declaradas' in tabela_simbolos: # Limpa memórias da linha anterior
-                    tabela_simbolos['memorias_declaradas'].clear()
-                if 'memorias_usadas' in tabela_simbolos:
-                    tabela_simbolos['memorias_usadas'].clear()
-
-                tabela_simbolos, erros, arvore_anotada, tipo_final = analisarSemantica(
+                tabela_simbolos, erros, arvore_anotada, tipo_final, memorias_declaradas_nesta_linha = analisarSemantica(
                     derivacao, tokens_valores, tabela_simbolos,
                     regras_semanticas, historico_resultados, numero_linha
                 )
 
                 # Validações adicionais
-                erros.extend(analisarSemanticaMemoria(tabela_simbolos, numero_linha))
+                erros.extend(analisarSemanticaMemoria(tabela_simbolos, numero_linha, memorias_declaradas_nesta_linha))
                 erros.extend(analisarSemanticaControle(arvore_anotada, numero_linha))
 
                 # Gera árvore atribuída consolidada
@@ -1087,9 +1237,9 @@ def main():
 
             except ValueError as e:
                 msg = str(e)
-                rel.write(f"Erro durante a análise: {msg}\n\n")
+                rel.write(f"{msg}\n\n")
                 todos_erros.append(msg)
-                print(f"  - Erro: {msg}")
+                print(f"  - {msg}")
 
         # Resumo final no relatório
         rel.write("Resumo Final\n")
