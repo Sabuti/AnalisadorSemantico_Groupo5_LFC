@@ -1105,9 +1105,9 @@ def gerarDocArvoreAtribuida(arvore_atribuida, nome_arquivo):
 # Geração de Documentação - Tabela de Símbolos
 def gerarDocTabelaSimbolos(tabela_simbolos, nome_arquivo):
     
-    with open(f"tabela_simbolos_{nome_arquivo}.md", "w", encoding="utf-8") as doc:
+    with open(f"tabela_memoria_{nome_arquivo}.md", "w", encoding="utf-8") as doc:
         doc.write("# Tabela de Símbolos\n\n")
-        doc.write("Armazena informações sobre identificadores (variáveis/memórias) do programa.\n\n")
+        doc.write("Armazena informações sobre a memória do programa.\n\n")
         
         tokens_sintaticos = {'(', ')', '+', '-', '*', '/', '%', '^', '|', '<', '>', '<=', '>=', '==', '!=', '<>', 'IF', 'WHILE', 'RES'}
         simbolos_validos = {k: v for k, v in tabela_simbolos.items() if k not in tokens_sintaticos}
@@ -1115,19 +1115,14 @@ def gerarDocTabelaSimbolos(tabela_simbolos, nome_arquivo):
         if not simbolos_validos:
             doc.write("*Tabela vazia - nenhuma variável declarada*\n\n")
         else:
-            doc.write("| Símbolo | Tipo | Inicializada | Valor | Linha Declaração | Escopo | Usada | Linhas de Uso |\n")
-            doc.write("|---------|------|--------------|-------|------------------|--------|-------|---------------|\n")
-            
             for simbolo, info in sorted(simbolos_validos.items(), key=lambda x: str(x[0])):
                 valor = str(info['valor']) if info['valor'] is not None else "N/A"
                 escopo = info.get('escopo', 'global')
-                linhas_uso = ', '.join(map(str, info.get('linhas_uso', []))) or "N/A"
-                
-                doc.write(f"| {simbolo} | {info['tipo']} | ")
-                doc.write(f"{'Sim' if info['inicializada'] else 'Não'} | ")
-                doc.write(f"{valor} | {info.get('linha_declaracao', 'N/A')} | ")
-                doc.write(f"{escopo} | {'Sim' if info['usada'] else 'Não'} | ")
-                doc.write(f"{linhas_uso} |\n")
+                doc.write(f"--------------------------------------------------------------------\n")
+                doc.write(f"Simbolo: {simbolo} \n Tipo: {info['tipo']} \n")
+                doc.write(f"Inicializada: {'Sim' if info['inicializada'] else 'Não'} \n")
+                doc.write(f"Valor: {valor} \n Linha declarada: {info.get('linha_declaracao', 'N/A')}  \n")
+                doc.write(f"Escopo: {escopo} {'Sim' if info['usada'] else 'Não'} \n")
             
             doc.write(f"\n**Total de símbolos:** {len(tabela_simbolos)}\n")
 
@@ -1168,7 +1163,7 @@ def main():
 
     # Nomes dos arquivos de saída
     relatorio_nome = f"relatorio_completo_{nome_base}.txt"
-    json_nome = f"resultado_completo_{nome_base}.txt"
+    json_nome = f"arvore_atribuida_e_erros_{nome_base}.txt"
 
     with open(relatorio_nome, "w", encoding="utf-8") as rel:
         rel.write(f"Relatório Completo da Análise — {nome_base}\n\n")
@@ -1263,7 +1258,7 @@ def main():
 
     # Grava o “JSON” formatado em texto
     with open(json_nome, "w", encoding="utf-8") as fjson:
-        fjson.write("Resultado Consolidado da Análise\n")
+        fjson.write("Arvore atribuida da Análise\n")
         fjson.write("-" * 60 + "\n\n")
         fjson.write(json.dumps(dados_json, indent=2, ensure_ascii=False))
         fjson.write("\n")
@@ -1271,8 +1266,8 @@ def main():
     # Exibe resumo final no terminal
     print("\nAnálise concluída.")
     print(f"Relatório detalhado: {relatorio_nome}")
-    print(f"Arquivo consolidado: {json_nome}")
-    print(f"Tabela de símbolos: tabela_simbolos_{nome_base}.txt")
+    print(f"Arquivo Arvore atribuida: {json_nome}")
+    print(f"Tabela de memória: tabela_memoria_{nome_base}.txt")
     print(f"Erros semânticos: erros_semanticos_{nome_base}.txt\n")
 
     if todos_erros:
