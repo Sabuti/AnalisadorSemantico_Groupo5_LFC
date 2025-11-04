@@ -1119,10 +1119,10 @@ def gerarDocTabelaSimbolos(tabela_simbolos, nome_arquivo):
                 valor = str(info['valor']) if info['valor'] is not None else "N/A"
                 escopo = info.get('escopo', 'global')
                 doc.write(f"--------------------------------------------------------------------\n")
-                doc.write(f"Simbolo: {simbolo} \n Tipo: {info['tipo']} \n")
+                doc.write(f"Simbolo: {simbolo} \nTipo: {info['tipo']} \n")
                 doc.write(f"Inicializada: {'Sim' if info['inicializada'] else 'Não'} \n")
-                doc.write(f"Valor: {valor} \n Linha declarada: {info.get('linha_declaracao', 'N/A')}  \n")
-                doc.write(f"Escopo: {escopo} {'Sim' if info['usada'] else 'Não'} \n")
+                doc.write(f"Valor: {valor} \nLinha declarada: {info.get('linha_declaracao', 'N/A')}  \n")
+                doc.write(f"Usada: {'Sim' if info['usada'] else 'Não'} \n")
             
             doc.write(f"\n**Total de símbolos:** {len(tabela_simbolos)}\n")
 
@@ -1159,11 +1159,11 @@ def main():
 
     # Gera documentação da gramática de atributos
     gerarDocGramaticaAtributos(nome_base)
-    print(f"Arquivo 'gramatica_atributos_{nome_base}.txt' criado com sucesso.\n")
+    print(f"Arquivo 'gramatica_atributos_{nome_base}.md' criado com sucesso.\n")
 
     # Nomes dos arquivos de saída
-    relatorio_nome = f"relatorio_completo_{nome_base}.txt"
-    json_nome = f"arvore_atribuida_e_erros_{nome_base}.txt"
+    relatorio_nome = f"relatorio_completo_{nome_base}.md"
+    json_nome = f"arvore_atribuida_{nome_base}.md"
 
     with open(relatorio_nome, "w", encoding="utf-8") as rel:
         rel.write(f"Relatório Completo da Análise — {nome_base}\n\n")
